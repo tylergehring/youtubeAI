@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automated-video-generator"
+version = "0.1.0"
+description = "Job-based, provider-agnostic pipeline for generating educational explainer videos."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6,<3",
+    "PyYAML>=6.0",
+    "filelock>=3.13",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML",
+    "imageio-ffmpeg>=0.5",  # bundled ffmpeg binary so tests run without a system install
+]
+
+[tool.setuptools.packages.find]
+include = ["core*", "pipeline*", "providers*", "rendering*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+markers = ["ffmpeg: test requires an ffmpeg binary"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["core", "pipeline", "providers", "rendering"]
+

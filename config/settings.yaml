@@ -1,0 +1,30 @@
+# Core application settings. Any value can be overridden with VIDGEN__<section>__<key>.
+workspace_dir: workspace      # relative paths resolve against the project root
+log_level: INFO
+ffmpeg_path: null             # null = FFMPEG_PATH env var, then PATH
+
+defaults:
+  style: technical_explainer
+  target_duration_minutes: 3
+  audience: beginner
+
+video:
+  width: 1280
+  height: 720
+  fps: 30
+  scene_padding_s: 0.4        # silence appended after each scene's narration
+
+qa:
+  min_duration_s: 3
+  max_duration_s: 1800
+  max_file_size_mb: 500
+  min_mean_volume_db: -60     # mean volume below this is treated as silent
+  duration_tolerance_s: 1.0   # allowed |video - timeline| difference
+  source_overlap_max: 0.35    # max share of script 5-grams copied from the source transcript
+  semantic_enabled: false
+
+ingest:                       # rules for the transcript files you upload
+  allowed_dirs: []            # empty = files may come from anywhere; set to restrict (e.g. on Jenkins)
+  extensions: [".txt", ".srt", ".vtt"]
+  max_file_mb: 5
+  max_sources: 10

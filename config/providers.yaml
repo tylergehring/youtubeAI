@@ -1,0 +1,19 @@
+# Which concrete provider backs each interface, plus pricing used for cost estimates.
+selected:
+  llm: mock
+  tts: mock
+  image: mock
+  research: mock
+
+models:
+  llm: mock-llm-1
+
+tts:
+  voice: mock-voice-1
+
+# Prices are estimates and must be kept current by hand.
+# Units: USD per 1k input/output tokens, per 1k characters, per request.
+pricing:
+  mock:
+    mock-llm-1: {input_per_1k_tokens: 0.0, output_per_1k_tokens: 0.0}
+    mock-voice-1: {per_1k_characters: 0.0}

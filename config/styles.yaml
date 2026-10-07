@@ -1,0 +1,9 @@
+styles:
+  technical_explainer:
+    description: Dark, high-contrast diagrams for technical explainers.
+    palette:            # scene background colours, cycled per scene
+      - "#0f172a"
+      - "#111c33"
+      - "#13213b"
+    accent_color: "#38bdf8"
+    text_color: "#f8fafc"
