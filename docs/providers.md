@@ -12,6 +12,30 @@ Source material is never fetched by a provider: transcripts are supplied by the 
 | `ImageProvider` | `generate(prompt, out_path, width, height)` | `providers/image/mock.py` |
 | `ResearchProvider` | `verify_claim(claim, topic)` | `providers/research/mock.py` |
 
+## OpenAI LLM provider (`providers/llm/openai_provider.py`)
+
+Setup: put `OPENAI_API_KEY=sk-...` in `.env` (git-ignored), then choose it per run or permanently:
+
+```powershell
+$env:VIDGEN__providers__selected__llm = "openai"      # this shell only
+# or edit selected.llm in config/providers.yaml
+python -m pipeline.check_provider --llm openai         # FREE: key + model access, no tokens
+python -m pipeline.check_provider --llm openai --live-call   # one tiny billable request (<$0.001)
+```
+
+* Model is `providers.models.llm.openai` (default `gpt-4.1-mini`); `models.<kind>.<provider>` means
+  switching provider also switches model. Pricing for cost tracking is in `providers.pricing`.
+* **Structured output:** JSON mode + strict Pydantic validation. If the reply is invalid the
+  provider re-asks (up to `openai.repair_attempts`, default 2) showing the model the errors; if it
+  still fails the stage fails. Replies cut off at the token limit are never parsed.
+* **Cost:** every attempt is summed; billable-but-failed calls are recorded in `job_cost.json`
+  (note `failed call`). Prices are estimates and ignore cached-input discounts.
+* Errors are translated to actionable messages (bad key, no credit `insufficient_quota`, unknown
+  model, rate limit, timeout, network) and never include the key. Transient errors are retried by
+  the SDK (`openai.max_retries`).
+* Reasoning-style models (`o*`, `gpt-5*`, `gpt-6*`) get no `temperature` parameter; override with
+  `openai.send_temperature`.
+
 ## Rules for implementers
 
 * Return a `Usage` (tokens/characters/requests) from billable calls; never compute prices -

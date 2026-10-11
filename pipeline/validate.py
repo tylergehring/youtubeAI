@@ -6,10 +6,11 @@ import re
 from collections.abc import Callable
 
 from core.config import Settings
-from core.exceptions import QualityCheckError, RenderError
+from core.exceptions import QualityCheckError, RenderError, StageError
 from core.jobs import JobPaths
 from core.models.content import Script, SourceRecord, Transcript
-from core.models.manifest import StageName
+from core.models.finance import ReelLayout, ReelPlan
+from core.models.manifest import JobFormat, StageName
 from core.models.media import (
     AudioManifest,
     CaptionTrack,
@@ -19,7 +20,9 @@ from core.models.media import (
     VisualManifest,
 )
 from core.models.scenes import ScenePlan
+from core.reel_input import parse_reel_spec
 from pipeline import artifacts
+from pipeline.reel_checks import reel_checks
 from pipeline.stage import Stage, StageContext, StageResult, make_main
 from rendering.ffmpeg import FFmpeg, MediaInfo
 
@@ -165,12 +168,36 @@ class ValidateStage(Stage):
         self._ffmpeg_factory = ffmpeg_factory
 
     def config_parts(self, ctx: StageContext) -> object:
+        if ctx.manifest.input.format is JobFormat.FINANCE_FACTS:
+            return {
+                "qa": ctx.settings.qa.model_dump(),
+                "finance": ctx.settings.finance.model_dump(mode="json"),
+            }
         return {"qa": ctx.settings.qa.model_dump(), "video": ctx.settings.video.model_dump()}
+
+    def _reel_checks(
+        self, ctx: StageContext, render: RenderResult, media: MediaInfo | None, media_error: str
+    ) -> list[CheckResult]:
+        paths = ctx.paths
+        reel = ctx.manifest.input.reel
+        if reel is None:
+            raise StageError("This job has no reel spec.")
+        spec_path = paths.absolute(reel.spec.stored_path)
+        return reel_checks(
+            paths=paths,
+            settings=ctx.settings,
+            plan=ctx.load(artifacts.reel_plan_json(paths), ReelPlan),
+            spec=parse_reel_spec(spec_path.read_text(encoding="utf-8-sig"), spec_path.suffix),
+            layout=ctx.load(artifacts.reel_layout_json(paths), ReelLayout),
+            render=render,
+            media=media,
+            media_error=media_error,
+        )
 
     def run(self, ctx: StageContext) -> StageResult:
         paths = ctx.paths
         render = ctx.load(artifacts.render_json(paths), RenderResult)
-        source = ctx.load(artifacts.source_json(paths), SourceRecord)
+        is_reel = ctx.manifest.input.format is JobFormat.FINANCE_FACTS
 
         media: MediaInfo | None = None
         media_error = ""
@@ -180,22 +207,26 @@ class ValidateStage(Stage):
             media_error = str(exc)
             ctx.log.error("Could not analyse video: %s", media_error)
 
-        checks = technical_checks(
-            paths=paths,
-            settings=ctx.settings,
-            plan=ctx.load(artifacts.scenes_json(paths), ScenePlan),
-            audio=ctx.load(artifacts.audio_json(paths), AudioManifest),
-            visuals=ctx.load(artifacts.visuals_json(paths), VisualManifest),
-            captions=ctx.load(artifacts.captions_json(paths), CaptionTrack),
-            render=render,
-            script=ctx.load(artifacts.script_json(paths), Script),
-            transcripts=[
-                ctx.load(paths.absolute(entry.transcript_path), Transcript)
-                for entry in source.sources
-            ],
-            media=media,
-            media_error=media_error,
-        )
+        if is_reel:
+            checks = self._reel_checks(ctx, render, media, media_error)
+        else:
+            source = ctx.load(artifacts.source_json(paths), SourceRecord)
+            checks = technical_checks(
+                paths=paths,
+                settings=ctx.settings,
+                plan=ctx.load(artifacts.scenes_json(paths), ScenePlan),
+                audio=ctx.load(artifacts.audio_json(paths), AudioManifest),
+                visuals=ctx.load(artifacts.visuals_json(paths), VisualManifest),
+                captions=ctx.load(artifacts.captions_json(paths), CaptionTrack),
+                render=render,
+                script=ctx.load(artifacts.script_json(paths), Script),
+                transcripts=[
+                    ctx.load(paths.absolute(entry.transcript_path), Transcript)
+                    for entry in source.sources
+                ],
+                media=media,
+                media_error=media_error,
+            )
         report = ValidationReport(
             technical_passed=all(c.passed or c.skipped for c in checks), checks=checks
         )

@@ -60,8 +60,13 @@ class TestTimeline:
 
 class TestCaptions:
     def test_split_respects_sentences_and_length(self) -> None:
-        chunks = split_cue_text(mock_data.RELIABILITY)
-        assert " ".join(chunks).replace("  ", " ") == mock_data.RELIABILITY
+        long_text = (
+            "From here, every byte gets a sequence number. The receiver acknowledges what it "
+            "has seen, and the sender retransmits anything that goes unacknowledged, so lost "
+            "packets are repaired before the application ever notices."
+        )
+        chunks = split_cue_text(long_text)
+        assert " ".join(chunks).replace("  ", " ") == long_text
         assert all(len(c) <= 80 for c in chunks)
         assert len(chunks) >= 3
 
@@ -101,7 +106,7 @@ class TestStageValidators:
             ScenePlan.model_validate(data), Script.model_validate(mock_data.script())
         )
         assert any("ghost" in p for p in problems)
-        assert any("handshake_syn" in p and "no scene" in p for p in problems)
+        assert any("context" in p and "no scene" in p for p in problems)
 
     def test_claim_reference_check(self) -> None:
         from core.models.content import KnowledgeBase

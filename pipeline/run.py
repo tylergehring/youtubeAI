@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 
 from core.config import Settings
+from core.exceptions import StageNotApplicableError
 from core.jobs import JobStore
 from core.logging import get_logger
-from core.models.manifest import STAGE_ORDER, StageName
+from core.models.manifest import StageName, stages_for
 from pipeline.acquire import AcquireStage
 from pipeline.captions import CaptionsStage
+from pipeline.finance import FinanceStage
 from pipeline.knowledge import KnowledgeStage
 from pipeline.lesson import LessonStage
 from pipeline.package import PackageStage
@@ -35,6 +37,7 @@ from providers.registry import ProviderSet
 def default_stages() -> dict[StageName, Stage]:
     stages: list[Stage] = [
         AcquireStage(),
+        FinanceStage(),
         KnowledgeStage(),
         ResearchStage(),
         LessonStage(),
@@ -63,11 +66,18 @@ def run_pipeline(
 ) -> dict[StageName, Outcome]:
     """Run stages in order, stopping at the first failure (the exception propagates)."""
     stages = stages or default_stages()
-    first = STAGE_ORDER.index(start) if start else 0
-    last = STAGE_ORDER.index(end) if end else len(STAGE_ORDER) - 1
+    order = stages_for(store.load(job_id).input.format)
+    for requested in (start, end):
+        if requested is not None and requested not in order:
+            raise StageNotApplicableError(
+                f"Stage '{requested.value}' is not part of this job's format. "
+                f"Stages: {', '.join(s.value for s in order)}"
+            )
+    first = order.index(start) if start else 0
+    last = order.index(end) if end else len(order) - 1
     log = get_logger(job_id, "RUN")
     outcomes: dict[StageName, Outcome] = {}
-    for name in STAGE_ORDER[first : last + 1]:
+    for name in order[first : last + 1]:
         outcomes[name] = run_stage(stages[name], store, job_id, settings, providers, force=force)
         log.info("%s -> %s", name.value, outcomes[name].value)
     return outcomes
@@ -78,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m pipeline.run", description="Run pipeline stages in order."
     )
     add_common_args(parser)
-    names = [s.value for s in STAGE_ORDER]
+    names = [s.value for s in StageName]
     parser.add_argument("--from", dest="start", choices=names, help="First stage to run")
     parser.add_argument("--to", dest="end", choices=names, help="Last stage to run")
     args = parser.parse_args(argv)

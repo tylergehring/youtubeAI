@@ -33,12 +33,24 @@ class UpstreamNotReadyError(JobError):
     """A stage was started before the stages it depends on succeeded."""
 
 
+class StageNotApplicableError(JobError):
+    """A stage was requested for a job whose format does not include it."""
+
+
 class StageError(VidgenError):
     """A pipeline stage failed."""
 
 
 class ProviderError(VidgenError):
-    """An external or mock provider failed."""
+    """An external or mock provider failed.
+
+    `usage` (a core.providers.Usage) records anything consumed before the failure so that
+    billable-but-failed calls are still counted in the job cost.
+    """
+
+    def __init__(self, message: str = "", *, usage: object | None = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 class StructuredOutputError(ProviderError):

@@ -1,0 +1,30 @@
+# Demo reel based on the reference format. ILLUSTRATIVE numbers only: not researched, not advice.
+# The figures are calculated, not typed: required capital = annual income / withdrawal rate.
+schema_version: 1
+template: finance_facts
+
+title: How Much Do You Need to Retire?
+# methodology omitted on purpose: for calculated figures it is generated from the assumptions
+# ("Using a 4.7% withdrawal rate"). If you write your own it must still show the 4.7%.
+
+figures:
+  kind: withdrawal_rate
+  withdrawal_rate_pct: 4.7
+  annual_incomes: [30000, 40000, 50000, 60000, 70000, 80000, 100000, 120000]
+
+cta: How much annual retirement income would make you feel financially secure?
+disclosure: >-
+  Hypothetical illustration for educational purposes only. Not financial advice
+  or a guarantee of results.
+
+# Resolved relative to this file. `python -m pipeline.demo` generates this abstract animated
+# placeholder (drifting light, not real footage) next to a copy of this spec. For a real reel,
+# point it at your own footage or at a stock clip whose license you hold, and record that below.
+background:
+  path: demo_background.mp4
+  origin: generated_placeholder
+  license: Generated locally by this project (abstract animation, no third-party content)
+
+provenance:
+  verification: illustrative
+  notes: Demo data taken from the reference format. The 4.7% rate is an assumption, not a researched figure.

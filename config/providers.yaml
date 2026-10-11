@@ -1,19 +1,40 @@
-# Which concrete provider backs each interface, plus pricing used for cost estimates.
+﻿# Which concrete provider backs each interface, plus models and pricing used for cost estimates.
+# Switch a provider here, or per run with an environment variable, e.g.
+#   $env:VIDGEN__providers__selected__llm = "openai"
 selected:
   llm: mock
   tts: mock
   image: mock
   research: mock
 
+# models.<kind>.<provider> -> model id (so changing `selected` also changes the model)
 models:
-  llm: mock-llm-1
+  llm:
+    mock: mock-llm-1
+    openai: gpt-4.1-mini
 
 tts:
   voice: mock-voice-1
 
-# Prices are estimates and must be kept current by hand.
-# Units: USD per 1k input/output tokens, per 1k characters, per request.
+openai:
+  timeout_s: 120
+  max_retries: 2            # SDK retries for transient network / 5xx errors
+  repair_attempts: 2        # extra attempts when the reply fails schema validation
+  max_output_tokens: 8192
+  # send_temperature: false # leave unset for auto; set false if a model rejects temperature
+
+# Estimated USD. Units: per 1k input/output tokens, per 1k characters, per request.
+# OpenAI standard-tier prices per 1M tokens from https://developers.openai.com/api/docs/pricing
+# (checked 2026-10-07). Cached-input discounts are ignored, so estimates are an upper bound.
+# Re-check before relying on them.
 pricing:
   mock:
     mock-llm-1: {input_per_1k_tokens: 0.0, output_per_1k_tokens: 0.0}
     mock-voice-1: {per_1k_characters: 0.0}
+  openai:
+    gpt-4.1-mini: {input_per_1k_tokens: 0.0004, output_per_1k_tokens: 0.0016}   # $0.40 / $1.60
+    gpt-4.1: {input_per_1k_tokens: 0.002, output_per_1k_tokens: 0.008}          # $2.00 / $8.00
+    gpt-4o-mini: {input_per_1k_tokens: 0.00015, output_per_1k_tokens: 0.0006}   # $0.15 / $0.60
+    gpt-5-mini: {input_per_1k_tokens: 0.00025, output_per_1k_tokens: 0.002}     # $0.25 / $2.00
+    gpt-5.4-mini: {input_per_1k_tokens: 0.00075, output_per_1k_tokens: 0.0045}  # $0.75 / $4.50
+    gpt-5.4: {input_per_1k_tokens: 0.0025, output_per_1k_tokens: 0.015}         # $2.50 / $15.00

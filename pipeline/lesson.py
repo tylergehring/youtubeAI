@@ -37,10 +37,8 @@ class LessonStage(Stage):
             "Return JSON matching the LessonPlan schema:\n"
             f"{json.dumps(LessonPlan.model_json_schema())}"
         )
-        llm = ctx.providers.llm
-        response = llm.generate_structured(prompt, LessonPlan, system=SYSTEM)
-        ctx.record_usage(llm.name, llm.model, response.usage)
-        return StageResult([ctx.save(artifacts.lesson_json(ctx.paths), response.value)])
+        value = ctx.generate_structured(prompt, LessonPlan, system=SYSTEM)
+        return StageResult([ctx.save(artifacts.lesson_json(ctx.paths), value)])
 
 
 main = make_main(LessonStage)

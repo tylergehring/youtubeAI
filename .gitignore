@@ -10,3 +10,8 @@ workspace/output/*
 !workspace/jobs/.gitkeep
 !workspace/output/.gitkeep
 workspace/index.db
+workspace/demo/
+
+.tools/
+spikes/**/node_modules/
+spikes/**/out/

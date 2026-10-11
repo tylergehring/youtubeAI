@@ -149,7 +149,7 @@ class TestFailureAndRetry:
     ) -> None:
         job = make_job()
         good_tts = providers.tts
-        providers.tts = MockTTSProvider(fail_on_text_containing="SYN-ACK")
+        providers.tts = MockTTSProvider(fail_on_text_containing="concrete example")
         with pytest.raises(StageError, match="voice"):
             run_pipeline(store, job.job_id, settings, providers, **ALL_NO_RENDER)
 
@@ -377,3 +377,88 @@ def test_render_without_ffmpeg_fails_clearly(
 
 
 _ = Callable  # keep import grouping stable for tooling
+
+
+class TestKnowledgeInput:
+    def test_full_text_is_sent_never_truncated(
+        self, store: JobStore, settings: Settings, providers: ProviderSet, make_job: MakeJob
+    ) -> None:
+        sentences = [f"Sentence {i} says something about household budgets." for i in range(700)]
+        big = " ".join(sentences) + " THE-VERY-LAST-WORDS"
+        assert 30_000 < len(big) < settings.knowledge.max_source_chars
+        job = make_job(transcripts=[("long.txt", big)])
+        run_pipeline(store, job.job_id, settings, providers, end=S.KNOWLEDGE)
+        assert isinstance(providers.llm, MockLLMProvider)
+        prompt = providers.llm.prompts[0]
+        assert "Sentence 0 says" in prompt and "Sentence 699 says" in prompt
+        assert "THE-VERY-LAST-WORDS" in prompt
+
+    def test_oversize_input_fails_clearly_and_calls_nothing(
+        self, store: JobStore, settings: Settings, providers: ProviderSet, make_job: MakeJob
+    ) -> None:
+        small = settings.model_copy(deep=True)
+        small.knowledge.max_source_chars = 1000
+        job = make_job(transcripts=[("long.txt", "A sentence about money. " * 100)])
+        with pytest.raises(StageError, match="max_source_chars"):
+            run_pipeline(store, job.job_id, small, providers, end=S.KNOWLEDGE)
+        assert isinstance(providers.llm, MockLLMProvider)
+        assert providers.llm.calls == []  # nothing was sent, so nothing was billed
+        manifest = store.load(job.job_id)
+        assert manifest.failed_stage is S.KNOWLEDGE
+        assert manifest.stage(S.ACQUIRE).state is StageState.SUCCEEDED
+        assert not artifacts.knowledge_json(store.paths(job.job_id)).exists()
+
+    def test_raising_the_limit_retries_only_knowledge(
+        self, store: JobStore, settings: Settings, providers: ProviderSet, make_job: MakeJob
+    ) -> None:
+        small = settings.model_copy(deep=True)
+        small.knowledge.max_source_chars = 1000
+        job = make_job(transcripts=[("long.txt", "A sentence about money. " * 100)])
+        with pytest.raises(StageError):
+            run_pipeline(store, job.job_id, small, providers, end=S.KNOWLEDGE)
+        outcomes = run_pipeline(store, job.job_id, settings, providers, end=S.KNOWLEDGE)
+        assert outcomes == {S.ACQUIRE: Outcome.REUSED, S.KNOWLEDGE: Outcome.EXECUTED}
+
+    def test_prompt_is_cleaned_and_system_prompt_ignores_promotions(
+        self, store: JobStore, settings: Settings, providers: ProviderSet, make_job: MakeJob
+    ) -> None:
+        job = make_job(transcripts=[("a.txt", "Savings are falling [music] >> Costs are rising.")])
+        run_pipeline(store, job.job_id, settings, providers, end=S.KNOWLEDGE)
+        assert isinstance(providers.llm, MockLLMProvider)
+        prompt = providers.llm.prompts[0]
+        assert "[music]" not in prompt and ">>" not in prompt
+        assert "Savings are falling\nCosts are rising." in prompt
+        system = providers.llm.systems[0] or ""
+        assert "sponsor" in system and "calls to action" in system
+
+        record = SourceRecord.model_validate_json(
+            artifacts.source_json(store.paths(job.job_id)).read_text()
+        )
+        assert record.sources[0].markers_removed == 1
+
+
+class TestMockContentMatchesTopic:
+    TOPIC = "Why Americans are running out of money"
+
+    def test_mock_output_is_about_the_topic_and_cites_the_sources(
+        self, store: JobStore, settings: Settings, providers: ProviderSet, make_job: MakeJob
+    ) -> None:
+        job = make_job(self.TOPIC, transcripts=[("Creator A.txt", SOURCE_TEXT)])
+        run_pipeline(store, job.job_id, settings, providers, **ALL_NO_RENDER)
+        paths = store.paths(job.job_id)
+        everything = "".join(
+            p.read_text()
+            for p in (
+                artifacts.knowledge_json(paths),
+                artifacts.lesson_json(paths),
+                artifacts.script_json(paths),
+                artifacts.scenes_json(paths),
+            )
+        )
+        assert self.TOPIC in everything
+        assert "TCP" not in everything and "SYN" not in everything
+        knowledge = json.loads(artifacts.knowledge_json(paths).read_text())
+        assert [r["label"] for r in knowledge["source_refs"]] == ["Creator A"]
+        research = json.loads(artifacts.research_json(paths).read_text())
+        urls = [e["source_url"] for r in research["results"] for e in r["evidence"]]
+        assert urls and all("mock" in u for u in urls)  # never passes off fake evidence as real

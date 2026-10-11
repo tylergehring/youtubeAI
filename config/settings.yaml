@@ -28,3 +28,15 @@ ingest:                       # rules for the transcript files you upload
   extensions: [".txt", ".srt", ".vtt"]
   max_file_mb: 5
   max_sources: 10
+
+knowledge:
+  max_source_chars: 60000     # ~15k tokens of transcript; larger inputs fail instead of being cut
+
+finance:                      # finance_facts reels (portrait 9:16); the video block above is untouched
+  width: 1080
+  height: 1920
+  fps: 30
+  safe_margins: {top: 0.10, bottom: 0.20, left: 0.07, right: 0.07}  # fractions of the frame
+  # font_regular / font_bold: null = search common system fonts; set paths to pin a font
+  max_asset_mb: 500
+  timing: {first_row_at_s: 2.2, row_interval_s: 0.9, end_hold_s: 3.0}

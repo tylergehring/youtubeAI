@@ -1,0 +1,30 @@
+# Example: monthly contribution needed from each starting age to reach a target by a target age.
+# Every assumption is mandatory and shown on screen. Hypothetical numbers, not a recommendation.
+schema_version: 1
+template: finance_facts
+
+title: What Could Starting Early Change?
+
+figures:
+  kind: age_target
+  target_amount: 1000000
+  target_age: 65
+  starting_ages: [25, 30, 35, 40, 45, 50]
+  annual_return_pct: 7          # nominal annual rate; constant, before taxes, fees and inflation
+  contribution_frequency: monthly
+  compounding: monthly
+  contribution_timing: end      # contributions are made at the end of each month
+
+cta: Which starting age is closest to yours today?
+disclosure: >-
+  Hypothetical illustration for educational purposes only. Assumes a constant return;
+  real returns vary. Not financial advice.
+
+background:
+  path: demo_background.png      # replace with your own footage or image
+  origin: user_supplied
+  license: Own footage
+
+provenance:
+  verification: illustrative
+  notes: Hypothetical assumptions chosen for illustration; not researched.

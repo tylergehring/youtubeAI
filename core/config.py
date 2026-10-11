@@ -61,6 +61,66 @@ class IngestSettings(_Cfg):
     max_sources: int = Field(default=10, ge=0)
 
 
+class KnowledgeSettings(_Cfg):
+    # Hard ceiling on transcript text sent to the LLM. Text is never silently truncated: if the
+    # supplied transcripts exceed this, the knowledge stage fails and says so.
+    max_source_chars: int = Field(default=60_000, ge=1000)
+
+
+class SafeMargins(_Cfg):
+    """Fractions of the frame kept clear of text so platform UI (status bar, caption, buttons)
+    never covers it."""
+
+    top: float = Field(default=0.10, ge=0, lt=0.5)
+    bottom: float = Field(default=0.20, ge=0, lt=0.5)
+    left: float = Field(default=0.07, ge=0, lt=0.5)
+    right: float = Field(default=0.07, ge=0, lt=0.5)
+
+
+class FinanceColors(_Cfg):
+    text: str = "#FFFFFF"
+    muted: str = "#E8ECF4"
+    accent: str = "#FFD166"
+    panel: str = "#000000"
+    scrim: str = "#000000"
+
+
+class FinanceTiming(_Cfg):
+    """Reveal schedule in seconds. Rows appear one at a time so the list can be read."""
+
+    title_at_s: float = Field(default=0.3, ge=0)
+    methodology_at_s: float = Field(default=1.2, ge=0)
+    first_row_at_s: float = Field(default=2.2, ge=0)
+    row_interval_s: float = Field(default=0.9, gt=0)
+    cta_delay_s: float = Field(default=1.4, ge=0)  # after the last row
+    end_hold_s: float = Field(default=3.0, ge=0)  # everything stays on screen after the CTA
+    fade_s: float = Field(default=0.35, gt=0)
+    slide_px: int = Field(default=26, ge=0)  # at 1080 px width; scaled with the frame
+    voiceover_tail_s: float = Field(default=0.6, ge=0)
+
+
+class FinanceSettings(_Cfg):
+    """Finance-facts reel output. Portrait 9:16 by default; the explainer's `video` is untouched."""
+
+    width: int = Field(default=1080, ge=16)
+    height: int = Field(default=1920, ge=16)
+    fps: int = Field(default=30, ge=1, le=120)
+    safe_margins: SafeMargins = Field(default_factory=SafeMargins)
+    colors: FinanceColors = Field(default_factory=FinanceColors)
+    timing: FinanceTiming = Field(default_factory=FinanceTiming)
+    scrim_max_opacity: float = Field(default=0.62, ge=0, le=1)  # at the top and bottom edges
+    scrim_min_opacity: float = Field(default=0.22, ge=0, le=1)  # mid-frame, keeps footage visible
+    panel_opacity: float = Field(default=0.55, ge=0, le=1)  # behind each figure row
+    min_text_scale: float = Field(default=0.6, gt=0, le=1)  # how far text may shrink to fit
+    font_regular: Path | None = None  # None = search common system fonts
+    font_bold: Path | None = None
+    image_extensions: list[str] = Field(default_factory=lambda: [".jpg", ".jpeg", ".png", ".webp"])
+    video_extensions: list[str] = Field(default_factory=lambda: [".mp4", ".mov", ".m4v", ".webm"])
+    audio_extensions: list[str] = Field(default_factory=lambda: [".wav", ".mp3", ".m4a", ".aac"])
+    max_asset_mb: float = Field(default=500, gt=0)
+    min_background_short_side_px: int = Field(default=480, ge=1)  # below this, a warning is logged
+
+
 class ProviderSelection(_Cfg):
     llm: str = "mock"
     tts: str = "mock"
@@ -75,11 +135,35 @@ class PriceEntry(_Cfg):
     per_request: float = 0.0
 
 
+class OpenAISettings(_Cfg):
+    timeout_s: float = Field(default=120, gt=0)
+    max_retries: int = Field(default=2, ge=0)  # SDK-level retries for transient network/5xx errors
+    repair_attempts: int = Field(default=2, ge=0)  # extra tries when output fails schema checks
+    max_output_tokens: int = Field(default=8192, ge=256)
+    send_temperature: bool | None = None  # None = auto (omitted for reasoning-style models)
+    base_url: str | None = None
+
+
 class ProviderSettings(_Cfg):
     selected: ProviderSelection = Field(default_factory=ProviderSelection)
-    models: dict[str, str] = Field(default_factory=lambda: {"llm": "mock-llm-1"})
+    # models[kind][provider_name] -> model id, so switching providers switches models too
+    models: dict[str, dict[str, str]] = Field(
+        default_factory=lambda: {"llm": {"mock": "mock-llm-1"}}
+    )
+    openai: OpenAISettings = Field(default_factory=OpenAISettings)
     tts: dict[str, str] = Field(default_factory=lambda: {"voice": "mock-voice-1"})
     pricing: dict[str, dict[str, PriceEntry]] = Field(default_factory=dict)
+
+    def model_for(self, kind: str) -> str:
+        """The model id configured for the selected provider of this kind."""
+        provider = getattr(self.selected, kind)
+        try:
+            return self.models[kind][provider]
+        except KeyError:
+            raise ConfigError(
+                f"No model configured for {kind} provider {provider!r}: "
+                f"add providers.models.{kind}.{provider} to config/providers.yaml"
+            ) from None
 
 
 class Settings(_Cfg):
@@ -90,6 +174,8 @@ class Settings(_Cfg):
     video: VideoSettings = Field(default_factory=VideoSettings)
     qa: QASettings = Field(default_factory=QASettings)
     ingest: IngestSettings = Field(default_factory=IngestSettings)
+    knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
+    finance: FinanceSettings = Field(default_factory=FinanceSettings)
     styles: dict[str, StyleConfig] = Field(default_factory=dict)
     providers: ProviderSettings = Field(default_factory=ProviderSettings)
 

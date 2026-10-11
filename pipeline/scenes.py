@@ -41,19 +41,17 @@ class ScenesStage(Stage):
     def run(self, ctx: StageContext) -> StageResult:
         script = ctx.load(artifacts.script_json(ctx.paths), Script)
         prompt = (
+            f"TOPIC: {ctx.manifest.topic}\n"
             f"AUDIENCE: {ctx.manifest.audience.value}\n"
             f"SCRIPT: {script.model_dump_json()}\n"
             "Return JSON matching the ScenePlan schema:\n"
             f"{json.dumps(ScenePlan.model_json_schema())}"
         )
-        llm = ctx.providers.llm
-        response = llm.generate_structured(prompt, ScenePlan, system=SYSTEM)
-        ctx.record_usage(llm.name, llm.model, response.usage)
-
-        problems = check_scene_coverage(response.value, script)
+        value = ctx.generate_structured(prompt, ScenePlan, system=SYSTEM)
+        problems = check_scene_coverage(value, script)
         if problems:
             raise StageError("Scene plan failed validation: " + "; ".join(problems))
-        return StageResult([ctx.save(artifacts.scenes_json(ctx.paths), response.value)])
+        return StageResult([ctx.save(artifacts.scenes_json(ctx.paths), value)])
 
 
 main = make_main(ScenesStage)

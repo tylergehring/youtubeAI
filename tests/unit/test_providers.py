@@ -117,3 +117,21 @@ class TestMockResearch:
         bad = provider.verify_claim(Claim(id="b", text="UNVERIFIABLE thing", confidence=0.5), "t")
         assert ok.verification.status.value == "VERIFIED_FACT" and ok.verification.evidence
         assert bad.verification.disputed and not bad.verification.evidence
+
+
+class TestPassthroughResearch:
+    def test_leaves_claims_attributed_to_their_source_and_costs_nothing(self) -> None:
+        from core.models.content import ClaimStatus
+        from providers.research.passthrough import PassthroughResearchProvider
+
+        claim = Claim(id="c1", text="Something the video said", confidence=0.8)
+        result = PassthroughResearchProvider().verify_claim(claim, "t")
+        v = result.verification
+        assert v.status is ClaimStatus.SOURCE_CLAIM and v.confidence == 0.8
+        assert v.evidence == [] and not v.disputed
+        assert result.usage.requests == 0
+
+    def test_selectable_by_name(self, settings: Settings) -> None:
+        chosen = settings.model_copy(deep=True)
+        chosen.providers.selected.research = "passthrough"
+        assert build_providers(chosen).research.name == "passthrough"

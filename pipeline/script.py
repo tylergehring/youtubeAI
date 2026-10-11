@@ -68,10 +68,8 @@ class ScriptStage(Stage):
             "Return JSON matching the Script schema:\n"
             f"{json.dumps(Script.model_json_schema())}"
         )
-        llm = ctx.providers.llm
-        response = llm.generate_structured(prompt, Script, system=SYSTEM)
-        ctx.record_usage(llm.name, llm.model, response.usage)
-        script = response.value
+        value = ctx.generate_structured(prompt, Script, system=SYSTEM)
+        script = value
 
         problems = check_claim_references(script, knowledge)
         if problems:

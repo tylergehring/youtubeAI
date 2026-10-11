@@ -28,6 +28,14 @@ class Usage(BaseModel):
     characters: int = 0
     requests: int = 1
 
+    def __add__(self, other: Usage) -> Usage:
+        return Usage(
+            tokens_in=self.tokens_in + other.tokens_in,
+            tokens_out=self.tokens_out + other.tokens_out,
+            characters=self.characters + other.characters,
+            requests=self.requests + other.requests,
+        )
+
 
 # ---------------------------------------------------------------- LLM
 
@@ -68,6 +76,10 @@ def parse_structured(raw: str, schema: type[T]) -> T:
 class LLMProvider(ABC):
     name: str
     model: str
+
+    def healthcheck(self) -> str:
+        """Verify credentials/model access WITHOUT a billable call; return a status line."""
+        return f"{self.name}: no connectivity check available"
 
     @abstractmethod
     def generate(

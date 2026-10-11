@@ -59,6 +59,22 @@ def render_video(p: JobPaths) -> Path:
     return p.subdir("render") / "video.mp4"
 
 
+def reel_plan_json(p: JobPaths) -> Path:
+    return p.subdir("finance") / "reel_plan.json"
+
+
+def reel_layout_json(p: JobPaths) -> Path:
+    return p.subdir("render") / "layout.json"
+
+
+def reel_preview_dir(p: JobPaths) -> Path:
+    return p.subdir("render") / "preview"
+
+
+def reel_provenance_json(p: JobPaths) -> Path:
+    return p.subdir("final") / "provenance.json"
+
+
 def render_json(p: JobPaths) -> Path:
     return p.subdir("render") / "render.json"
 

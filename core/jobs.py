@@ -7,6 +7,8 @@ rebuilt at any time with JobStore.rebuild_index().
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import shutil
 import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
@@ -25,14 +27,17 @@ from core.ingest import PreparedSource
 from core.models.manifest import (
     ALLOWED_TRANSITIONS,
     Audience,
+    JobFormat,
     JobInput,
     JobManifest,
     JobStatus,
+    ReelSource,
     SourceFile,
     StageName,
     utcnow,
 )
 from core.naming import slugify, validate_job_id
+from core.reel_input import PreparedAsset, PreparedReel, sha256_of
 from core.storage import atomic_write_bytes, read_json, write_json, write_model
 
 JOB_SUBDIRS = (
@@ -52,6 +57,45 @@ JOB_SUBDIRS = (
     "final",
     "logs",
 )
+
+
+def _reel_source(reel: PreparedReel) -> ReelSource:
+    """Describe (and hash) the files of a reel job as they will be stored in the job."""
+
+    def entry(asset: PreparedAsset, stem: str, label: str) -> SourceFile:
+        return SourceFile(
+            name=asset.name,
+            stored_path=f"source/reel/{stem}{Path(asset.name).suffix}",
+            label=label,
+            sha256=sha256_of(asset.path),
+            size_bytes=asset.size_bytes,
+        )
+
+    spec_asset_suffix = Path(reel.spec_name).suffix
+    return ReelSource(
+        spec=SourceFile(
+            name=reel.spec_name,
+            stored_path=f"source/reel/spec{spec_asset_suffix}",
+            label="Reel spec",
+            sha256=hashlib.sha256(reel.spec_data).hexdigest(),
+            size_bytes=len(reel.spec_data),
+        ),
+        background=entry(reel.background, "background", "Background"),
+        voiceover=entry(reel.voiceover, "voiceover", "Voiceover") if reel.voiceover else None,
+    )
+
+
+def _copy_reel(paths: JobPaths, reel: PreparedReel, source: ReelSource) -> None:
+    atomic_write_bytes(paths.absolute(source.spec.stored_path), reel.spec_data)
+    pairs = [(reel.background, source.background)]
+    if reel.voiceover and source.voiceover:
+        pairs.append((reel.voiceover, source.voiceover))
+    for asset, stored in pairs:
+        target = paths.absolute(stored.stored_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(asset.path, target)
+        if sha256_of(target) != stored.sha256:
+            raise InvalidInputError(f"{asset.path.name} changed while it was being copied")
 
 
 @dataclass(frozen=True)
@@ -142,15 +186,18 @@ class JobStore:
         topic: str,
         *,
         sources: Sequence[PreparedSource] = (),
+        reel: PreparedReel | None = None,
         style: str,
         target_duration_minutes: float,
         audience: Audience,
         job_id: str | None = None,
     ) -> JobManifest:
-        """Create a job. Transcripts are copied into the job so it is self-contained."""
+        """Create a job. Transcripts (or a reel's files) are copied in so it is self-contained."""
         topic = topic.strip()
         if not topic:
             raise InvalidInputError("A topic is required.")
+        if reel is not None and sources:
+            raise InvalidInputError("A finance reel job does not use transcripts.")
         if job_id is None:
             job_id = self._next_job_id(slugify(topic), utcnow())
         paths = self.paths(job_id)
@@ -170,9 +217,15 @@ class JobStore:
                     size_bytes=len(source.data),
                 )
             )
+        reel_source = _reel_source(reel) if reel is not None else None
         manifest = JobManifest(
             job_id=job_id,
-            input=JobInput(topic=topic, sources=files),
+            input=JobInput(
+                topic=topic,
+                sources=files,
+                format=JobFormat.FINANCE_FACTS if reel else JobFormat.EXPLAINER,
+                reel=reel_source,
+            ),
             style=style,
             target_duration_minutes=target_duration_minutes,
             audience=audience,
@@ -181,6 +234,12 @@ class JobStore:
             paths.subdir(name).mkdir(parents=True, exist_ok=True)
         for source, file in zip(sources, files, strict=True):
             atomic_write_bytes(paths.absolute(file.stored_path), source.data)
+        if reel is not None and reel_source is not None:
+            try:
+                _copy_reel(paths, reel, reel_source)
+            except BaseException:
+                shutil.rmtree(paths.root, ignore_errors=True)
+                raise
         write_json(paths.input_json, manifest.input.model_dump(mode="json"))
         with self._lock(paths):
             self._save(manifest, paths)

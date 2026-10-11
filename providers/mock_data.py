@@ -1,267 +1,236 @@
-"""Canned fake content shared by the mock providers (Milestone 1 only).
+"""Canned placeholder content for the mock providers.
 
-The content is a short, plausible TCP lesson so the fake pipeline produces schema-valid,
-human-readable artifacts. Nothing here calls an external service.
+Everything is templated on the job's topic and clearly labelled as mock output, so a fake run
+never looks like real research about some other subject. Nothing here calls a service.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-HOOK = (
-    "Every web page you load depends on a promise: the bytes you send will arrive, in order, "
-    "exactly once. TCP keeps that promise, even though the network underneath keeps losing "
-    "packets."
-)
-SYN = (
-    "Before any data moves, the two machines have to agree to talk. The client starts by "
-    "sending a SYN packet to the server, carrying a randomly chosen starting sequence number."
-)
-SYN_ACK = (
-    "The server answers with a SYN-ACK. It acknowledges the client's number and offers its "
-    "own. The client finishes with an ACK, and now both sides know the other is listening."
-)
-RELIABILITY = (
-    "From here, every byte gets a sequence number. The receiver acknowledges what it has "
-    "seen, and the sender retransmits anything that goes unacknowledged. Lost, duplicated or "
-    "reordered packets are repaired before the application ever notices."
-)
-CONCLUSION = (
-    "So TCP builds a reliable, ordered stream on top of an unreliable network, using "
-    "sequence numbers, acknowledgements and retransmission. Next time a page loads, remember "
-    "the handshake that happened first."
-)
+MOCK_NOTE = "[mock]"
 
 
-def knowledge(topic: str) -> dict[str, Any]:
+def knowledge(topic: str, source_labels: tuple[str, ...] | list[str] = ()) -> dict[str, Any]:
     return {
         "topic": topic,
         "concepts": [
             {
-                "name": "Three-way handshake",
-                "description": "SYN, SYN-ACK, ACK exchange that opens a connection.",
+                "name": "Core question",
+                "description": f"{MOCK_NOTE} What is going on with: {topic}",
                 "importance": 0.95,
             },
             {
-                "name": "Sequence numbers",
-                "description": "Numbering of bytes so the receiver can order and de-duplicate.",
+                "name": "Key drivers",
+                "description": f"{MOCK_NOTE} The main causes the sources point to.",
                 "importance": 0.9,
             },
             {
-                "name": "Retransmission",
-                "description": "Resending data that was not acknowledged in time.",
+                "name": "Practical implications",
+                "description": f"{MOCK_NOTE} What this means for a viewer.",
                 "importance": 0.85,
             },
         ],
-        "entities": [
-            {"name": "Client", "kind": "host"},
-            {"name": "Server", "kind": "host"},
-        ],
+        "entities": [{"name": "Viewer", "kind": "audience"}],
         "relationships": [
-            {"subject": "Client", "predicate": "sends SYN to", "object": "Server"},
-            {"subject": "Server", "predicate": "replies SYN-ACK to", "object": "Client"},
+            {"subject": "Key drivers", "predicate": "explain", "object": "Core question"}
         ],
         "claims": [
             {
                 "id": "c1",
-                "text": "TCP provides reliable, ordered delivery of a byte stream.",
+                "text": f"{MOCK_NOTE} The sources make a central claim about {topic}.",
                 "status": "SOURCE_CLAIM",
-                "confidence": 0.9,
+                "confidence": 0.7,
             },
             {
                 "id": "c2",
-                "text": "A TCP connection is opened with a three-way handshake.",
+                "text": f"{MOCK_NOTE} The sources give supporting evidence for {topic}.",
                 "status": "SOURCE_CLAIM",
-                "confidence": 0.9,
+                "confidence": 0.7,
             },
             {
                 "id": "c3",
-                "text": "TCP uses sequence numbers and acknowledgements to detect loss.",
+                "text": f"{MOCK_NOTE} The sources describe consequences of {topic}.",
                 "status": "SOURCE_CLAIM",
-                "confidence": 0.85,
+                "confidence": 0.6,
             },
             {
                 "id": "c4",
-                "text": "Unacknowledged data is retransmitted by the sender.",
+                "text": f"{MOCK_NOTE} A viewer could act on these points.",
                 "status": "INFERENCE",
-                "confidence": 0.8,
+                "confidence": 0.6,
             },
         ],
-        "definitions": [
-            {
-                "term": "SYN",
-                "definition": "A segment flag requesting to synchronise sequence numbers.",
-            }
-        ],
-        "examples": [
-            {"title": "Loading a web page", "description": "Browser and server open a connection."}
-        ],
+        "definitions": [],
+        "examples": [{"title": "Placeholder example", "description": f"{MOCK_NOTE} {topic}"}],
         "chronology": [],
-        "uncertainties": [],
-        "source_refs": [{"label": "RFC 9293", "url": "https://www.rfc-editor.org/rfc/rfc9293"}],
+        "uncertainties": [f"{MOCK_NOTE} Nothing was actually read; this is canned output."],
+        "source_refs": [{"label": label} for label in source_labels],
     }
 
 
 def lesson(topic: str, audience: str) -> dict[str, Any]:
     return {
         "title": topic,
-        "hook": HOOK,
+        "hook": f"{MOCK_NOTE} A hook that makes a {audience} viewer care about: {topic}",
         "audience": audience,
-        "prerequisites": ["What an IP address is"],
+        "prerequisites": [],
         "objectives": [
-            "Explain why TCP needs a handshake",
-            "Describe how sequence numbers enable reliability",
+            f"Understand the core question behind: {topic}",
+            "See the main drivers and what they mean in practice",
         ],
         "sections": [
-            {"id": "intro", "title": "Why reliability is hard", "concepts": []},
+            {"id": "intro", "title": "Why this matters", "concepts": []},
+            {"id": "context", "title": "The background", "concepts": ["Core question"]},
             {
-                "id": "handshake",
-                "title": "Opening a connection",
-                "concepts": ["Three-way handshake"],
-                "examples": ["Loading a web page"],
+                "id": "example",
+                "title": "A concrete example",
+                "concepts": ["Key drivers"],
+                "examples": ["Placeholder example"],
             },
             {
-                "id": "reliability",
-                "title": "Keeping data intact",
-                "concepts": ["Sequence numbers", "Retransmission"],
+                "id": "takeaway",
+                "title": "What to do with it",
+                "concepts": ["Practical implications"],
             },
-            {"id": "wrap_up", "title": "Putting it together", "concepts": []},
+            {"id": "conclusion", "title": "Wrapping up", "concepts": []},
         ],
-        "conclusion": CONCLUSION,
+        "conclusion": f"{MOCK_NOTE} Closing thoughts on {topic}.",
         "estimated_duration_s": 60,
     }
 
 
-def script() -> dict[str, Any]:
+def narrations(topic: str) -> dict[str, str]:
+    return {
+        "intro": (
+            f"This is the mock opening hook for a video about {topic}. A real run would write "
+            "an original, attention-grabbing opening from the research."
+        ),
+        "context": (
+            f"This mock section would explain the background to {topic}. It stands in for the "
+            "facts and context the lesson plan calls for."
+        ),
+        "example": (
+            "This mock section would walk through a concrete example, with numbers or a "
+            "scenario a beginner could follow."
+        ),
+        "takeaway": (
+            "This mock section would turn the facts into practical takeaways, kept clearly "
+            "separate from the claims the sources made."
+        ),
+        "conclusion": (
+            f"This mock closing would recap the main points about {topic} and leave the viewer "
+            "with one thing to remember."
+        ),
+    }
+
+
+def script(topic: str = "the topic") -> dict[str, Any]:
+    text = narrations(topic)
+    spec = [
+        ("intro", "hook", ["c1"]),
+        ("context", "explanation", ["c2"]),
+        ("example", "example", ["c2", "c3"]),
+        ("takeaway", "explanation", ["c3", "c4"]),
+        ("conclusion", "conclusion", []),
+    ]
     return {
         "sections": [
-            {"id": "intro", "purpose": "hook", "narration": HOOK, "claim_ids": ["c1"]},
-            {
-                "id": "handshake_syn",
-                "purpose": "explanation",
-                "narration": SYN,
-                "claim_ids": ["c2"],
-            },
-            {
-                "id": "handshake_ack",
-                "purpose": "example",
-                "narration": SYN_ACK,
-                "claim_ids": ["c2"],
-            },
-            {
-                "id": "reliability",
-                "purpose": "explanation",
-                "narration": RELIABILITY,
-                "claim_ids": ["c3", "c4"],
-            },
-            {"id": "conclusion", "purpose": "conclusion", "narration": CONCLUSION},
+            {"id": sid, "purpose": purpose, "narration": text[sid], "claim_ids": claims}
+            for sid, purpose, claims in spec
         ]
     }
 
 
-def _computer_server() -> list[dict[str, Any]]:
-    return [
-        {"type": "computer", "id": "client", "label": "Client", "position": [0.2, 0.5]},
-        {"type": "server", "id": "server", "label": "Server", "position": [0.8, 0.5]},
-    ]
-
-
-def scenes() -> dict[str, Any]:
+def scenes(topic: str = "the topic") -> dict[str, Any]:
+    text = narrations(topic)
     return {
         "scenes": [
             {
                 "scene_id": 1,
                 "section_id": "intro",
-                "narration": HOOK,
+                "narration": text["intro"],
                 "estimated_duration_s": 8,
                 "visual_type": "title",
-                "objects": [
-                    {"type": "text", "id": "title", "text": "How TCP Works", "position": [0.5, 0.5]}
-                ],
+                "objects": [{"type": "text", "id": "title", "text": topic, "position": [0.5, 0.5]}],
                 "animations": [{"type": "fade_in", "target": "title", "start": 0.0, "end": 0.3}],
-                "text": ["How TCP Works"],
+                "text": [topic],
             },
             {
                 "scene_id": 2,
-                "section_id": "handshake_syn",
-                "narration": SYN,
-                "estimated_duration_s": 8,
-                "visual_type": "network_diagram",
-                "objects": _computer_server(),
-                "animations": [
-                    {
-                        "type": "packet",
-                        "from": "client",
-                        "to": "server",
-                        "label": "SYN",
-                        "start": 0.4,
-                        "end": 0.9,
-                    }
-                ],
-                "emphasis": ["SYN"],
-            },
-            {
-                "scene_id": 3,
-                "section_id": "handshake_ack",
-                "narration": SYN_ACK,
-                "estimated_duration_s": 8,
-                "visual_type": "network_diagram",
-                "objects": _computer_server(),
-                "animations": [
-                    {
-                        "type": "packet",
-                        "from": "server",
-                        "to": "client",
-                        "label": "SYN-ACK",
-                        "start": 0.1,
-                        "end": 0.5,
-                    },
-                    {
-                        "type": "packet",
-                        "from": "client",
-                        "to": "server",
-                        "label": "ACK",
-                        "start": 0.6,
-                        "end": 0.95,
-                    },
-                ],
-                "emphasis": ["SYN-ACK", "ACK"],
-            },
-            {
-                "scene_id": 4,
-                "section_id": "reliability",
-                "narration": RELIABILITY,
-                "estimated_duration_s": 10,
-                "visual_type": "network_diagram",
-                "objects": _computer_server(),
-                "animations": [
-                    {
-                        "type": "packet",
-                        "from": "client",
-                        "to": "server",
-                        "label": "seq 1",
-                        "start": 0.1,
-                        "end": 0.4,
-                    },
-                    {"type": "pulse", "target": "server", "start": 0.5, "end": 0.7},
-                ],
-            },
-            {
-                "scene_id": 5,
-                "section_id": "conclusion",
-                "narration": CONCLUSION,
+                "section_id": "context",
+                "narration": text["context"],
                 "estimated_duration_s": 8,
                 "visual_type": "text_slide",
                 "objects": [
                     {
                         "type": "text",
-                        "id": "recap",
-                        "text": "Reliable on top of unreliable",
+                        "id": "heading",
+                        "text": "The background",
+                        "position": [0.5, 0.3],
+                    },
+                    {
+                        "type": "text",
+                        "id": "point",
+                        "text": "Key facts go here",
+                        "position": [0.5, 0.6],
+                    },
+                ],
+                "animations": [
+                    {"type": "fade_in", "target": "heading", "start": 0.0, "end": 0.2},
+                    {"type": "type", "target": "point", "start": 0.3, "end": 0.8},
+                ],
+                "text": ["The background"],
+            },
+            {
+                "scene_id": 3,
+                "section_id": "example",
+                "narration": text["example"],
+                "estimated_duration_s": 8,
+                "visual_type": "graph",
+                "objects": [
+                    {
+                        "type": "graph",
+                        "id": "chart",
                         "position": [0.5, 0.5],
+                        "points": [[0, 1], [1, 2], [2, 2.5], [3, 4]],
+                        "x_label": "Time",
+                        "y_label": "Value",
                     }
                 ],
+                "animations": [{"type": "draw", "target": "chart", "start": 0.1, "end": 0.9}],
+            },
+            {
+                "scene_id": 4,
+                "section_id": "takeaway",
+                "narration": text["takeaway"],
+                "estimated_duration_s": 10,
+                "visual_type": "timeline",
+                "objects": [
+                    {
+                        "type": "timeline",
+                        "id": "steps",
+                        "position": [0.5, 0.5],
+                        "events": [
+                            {"label": "Learn", "t": 0.0},
+                            {"label": "Plan", "t": 0.5},
+                            {"label": "Act", "t": 1.0},
+                        ],
+                    }
+                ],
+                "animations": [{"type": "fade_in", "target": "steps", "start": 0.0, "end": 0.5}],
+            },
+            {
+                "scene_id": 5,
+                "section_id": "conclusion",
+                "narration": text["conclusion"],
+                "estimated_duration_s": 8,
+                "visual_type": "text_slide",
+                "objects": [
+                    {"type": "text", "id": "recap", "text": "Remember this", "position": [0.5, 0.5]}
+                ],
                 "animations": [{"type": "type", "target": "recap", "start": 0.0, "end": 0.5}],
-                "text": ["Reliable on top of unreliable"],
+                "text": ["Remember this"],
                 "transition": "fade",
             },
         ]

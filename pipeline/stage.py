@@ -28,18 +28,25 @@ from pydantic import BaseModel
 
 from core.config import Settings, load_settings
 from core.costs import CostTracker
-from core.exceptions import StageError, UpstreamNotReadyError, VidgenError
+from core.exceptions import (
+    ProviderError,
+    StageError,
+    StageNotApplicableError,
+    UpstreamNotReadyError,
+    VidgenError,
+)
 from core.hashing import fingerprint
 from core.jobs import JobPaths, JobStore
 from core.logging import configure_logging, get_logger, job_log_file, redact
 from core.models.manifest import (
-    STAGE_DEPENDENCIES,
     STAGE_STATUS,
     JobManifest,
     JobStatus,
     StageName,
     StageState,
     downstream_of,
+    stage_dependencies,
+    stages_for,
     utcnow,
 )
 from core.providers import Usage
@@ -95,6 +102,22 @@ class StageContext:
             stage=self.stage.value, provider=provider, model=model, usage=usage, note=note
         )
 
+    def generate_structured(self, prompt: str, schema: type[M], *, system: str | None = None) -> M:
+        """Call the LLM for a validated `schema` instance and always record what it cost.
+
+        Usage is recorded on success and also when the call fails after consuming tokens
+        (e.g. malformed output that exhausted its repair attempts).
+        """
+        llm = self.providers.llm
+        try:
+            response = llm.generate_structured(prompt, schema, system=system)
+        except ProviderError as exc:
+            if isinstance(exc.usage, Usage) and exc.usage.requests > 0:
+                self.record_usage(llm.name, llm.model, exc.usage, note="failed call")
+            raise
+        self.record_usage(llm.name, llm.model, response.usage)
+        return response.value
+
     def prune(self, directory: Path, keep: set[Path]) -> None:
         """Delete files left over from a previous run that this run did not produce."""
         if not directory.is_dir():
@@ -125,12 +148,13 @@ class Stage(ABC):
 def compute_fingerprint(stage: Stage, ctx: StageContext) -> str:
     manifest = ctx.manifest
     upstream = {
-        dep.value: manifest.stage(dep).input_fingerprint for dep in STAGE_DEPENDENCIES[stage.name]
+        dep.value: manifest.stage(dep).input_fingerprint
+        for dep in stage_dependencies(manifest.input.format, stage.name)
     }
     return fingerprint(
         stage.name.value,
         stage.version,
-        manifest.input.model_dump(mode="json"),
+        manifest.input.fingerprint_data(),
         manifest.style,
         manifest.target_duration_minutes,
         manifest.audience.value,
@@ -140,8 +164,16 @@ def compute_fingerprint(stage: Stage, ctx: StageContext) -> str:
     )
 
 
+def _check_applicable(manifest: JobManifest, stage: Stage) -> None:
+    if stage.name not in stages_for(manifest.input.format):
+        raise StageNotApplicableError(
+            f"Stage '{stage.name.value}' is not part of the {manifest.input.format.value!r} "
+            f"format. Stages: {', '.join(s.value for s in stages_for(manifest.input.format))}"
+        )
+
+
 def _check_upstream(manifest: JobManifest, stage: Stage) -> None:
-    for dep in STAGE_DEPENDENCIES[stage.name]:
+    for dep in stage_dependencies(manifest.input.format, stage.name):
         state = manifest.stage(dep).state
         if state not in (StageState.SUCCEEDED, StageState.SKIPPED):
             raise UpstreamNotReadyError(
@@ -175,6 +207,7 @@ def run_stage(
 
     with job_log_file(paths.log_file):
         manifest = store.load(job_id)
+        _check_applicable(manifest, stage)
         _check_upstream(manifest, stage)
         ctx = StageContext(
             job_id=job_id,
@@ -239,7 +272,7 @@ def run_stage(
             record.outputs = outputs
             record.note = result.note
             record.error = None
-            for downstream in downstream_of(name):
+            for downstream in downstream_of(name, m.input.format):
                 dep_record = m.stage(downstream)
                 if dep_record.state in (StageState.SUCCEEDED, StageState.SKIPPED):
                     dep_record.state = StageState.STALE

@@ -24,10 +24,10 @@ class MockResearchProvider(ResearchProvider):
         else:
             evidence = Evidence(
                 claim_id=claim.id,
-                source_url="https://www.rfc-editor.org/rfc/rfc9293",
-                source_title="RFC 9293: Transmission Control Protocol (TCP)",
-                source_type="specification",
-                excerpt="(mock evidence)",
+                source_url="https://example.com/mock-evidence",
+                source_title="Mock evidence (no real research was performed)",
+                source_type="mock",
+                excerpt="",
             )
             verification = ClaimVerification(
                 claim_id=claim.id,

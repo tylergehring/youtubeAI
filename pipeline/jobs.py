@@ -16,7 +16,8 @@ from core.exceptions import InvalidInputError
 from core.ingest import SourceSpec, prepare_sources
 from core.jobs import JobStore
 from core.logging import configure_logging
-from core.models.manifest import Audience, JobManifest
+from core.models.manifest import Audience, JobFormat, JobManifest, stages_for
+from core.reel_input import prepare_reel
 from pipeline.stage import EXIT_OK, handle_errors
 
 
@@ -35,12 +36,13 @@ def _print_status(manifest: JobManifest) -> None:
         print(f"failed:  {manifest.failed_stage.value} - {manifest.error}")
     print(f"topic:   {manifest.topic}")
     print(f"{'stage':<12}{'state':<11}{'tries':<7}note")
-    for name, record in manifest.stages.items():
+    for name in stages_for(manifest.input.format):
+        record = manifest.stage(name)
         note = record.error or record.note or ""
         print(f"{name.value:<12}{record.state.value:<11}{record.attempts:<7}{note}")
 
 
-_SCALAR_KEYS = ("topic", "style", "duration", "audience", "job_id")
+_SCALAR_KEYS = ("topic", "style", "duration", "audience", "job_id", "format", "reel_spec")
 _PARAM_KEYS = {*_SCALAR_KEYS, "transcripts"}
 _SOURCE_KEYS = {"path", "label", "url"}
 
@@ -83,14 +85,32 @@ def _create_params(args: argparse.Namespace) -> tuple[dict[str, Any], list[Sourc
                 params[key] = loaded[key]
         specs += _specs_from(loaded.get("transcripts", []))
     params = {k: (None if v == "" else v) for k, v in params.items()}
-    if not params["topic"]:
-        raise InvalidInputError("A topic is required (--topic or params file).")
     return params, specs
 
 
 def cmd_create(args: argparse.Namespace) -> int:
     settings, store = _store_and_settings(args)
     params, specs = _create_params(args)
+    try:
+        job_format = JobFormat(params["format"] or JobFormat.EXPLAINER)
+    except ValueError as exc:
+        raise InvalidInputError(f"Invalid job format: {exc}") from exc
+
+    reel = None
+    if job_format is JobFormat.FINANCE_FACTS:
+        if not params["reel_spec"]:
+            raise InvalidInputError("--reel-spec (or 'reel_spec' in the params file) is required.")
+        if specs:
+            raise InvalidInputError("Transcripts are not used by the finance_facts format.")
+        reel = prepare_reel(Path(str(params["reel_spec"])), settings)
+        topic = str(params["topic"] or reel.spec.title)
+    else:
+        if params["reel_spec"]:
+            raise InvalidInputError("--reel-spec only applies to --format finance_facts.")
+        if not params["topic"]:
+            raise InvalidInputError("A topic is required (--topic or params file).")
+        topic = str(params["topic"])
+
     style = params["style"] or settings.defaults.style
     settings.style(style)  # validates the style exists
     try:
@@ -99,8 +119,9 @@ def cmd_create(args: argparse.Namespace) -> int:
     except ValueError as exc:
         raise InvalidInputError(f"Invalid job parameter: {exc}") from exc
     manifest = store.create(
-        str(params["topic"]),
+        topic,
         sources=prepare_sources(specs, settings.ingest),
+        reel=reel,
         style=style,
         target_duration_minutes=duration,
         audience=audience,
@@ -142,7 +163,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     create = sub.add_parser("create", help="Create a job and print its ID")
-    create.add_argument("--topic", help="What the video should teach")
+    create.add_argument(
+        "--format",
+        choices=[f.value for f in JobFormat],
+        help="Content format (default: explainer). finance_facts needs --reel-spec",
+    )
+    create.add_argument("--topic", help="What the video should teach (finance_facts: spec title)")
+    create.add_argument(
+        "--reel-spec",
+        metavar="FILE",
+        help="finance_facts: JSON/YAML reel spec; its background file is read from local disk",
+    )
     create.add_argument(
         "--transcript",
         action="append",

@@ -34,7 +34,7 @@ class PreparedSource:
     format: str
 
 
-def _check_location(path: Path, ingest: IngestSettings) -> None:
+def check_location(path: Path, ingest: IngestSettings) -> None:
     if not ingest.allowed_dirs:
         return
     resolved = path.resolve()
@@ -64,7 +64,7 @@ def prepare_sources(specs: Sequence[SourceSpec], ingest: IngestSettings) -> list
             raise InvalidInputError(
                 f"{path.name}: unsupported file type {suffix!r}; allowed: {sorted(allowed)}"
             )
-        _check_location(path, ingest)
+        check_location(path, ingest)
         size = path.stat().st_size
         if size == 0 or size > ingest.max_file_mb * 1024 * 1024:
             raise InvalidInputError(

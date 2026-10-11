@@ -56,6 +56,9 @@ Two statuses were added to your list: `generating_captions` and `packaging`.
 
 ## Deviations from the original proposal
 
+* A second job format, `finance_facts` (text-first Reels), has its own stage list
+  (`finance`, `render`, `validate`, `package`) defined in `core/models/manifest.py`; see
+  "Finance reels" in [pipeline.md](pipeline.md). Reel jobs also keep `source/reel/` and `finance/`.
 * `timeline.py` lives in `rendering/` (not `pipeline/`) because both captions and render use it.
 * There is no YouTube provider, transcription provider or `transcribe` stage: you supply
   transcripts. (YouTube upload in Milestone 10 is out of scope for now.)

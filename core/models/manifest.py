@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = 1
 
@@ -20,8 +21,15 @@ class Audience(StrEnum):
     ADVANCED = "advanced"
 
 
+class JobFormat(StrEnum):
+    """Which content path a job follows. Each format runs its own subset of stages."""
+
+    EXPLAINER = "explainer"  # transcripts -> lesson -> narrated scenes (the original format)
+    FINANCE_FACTS = "finance_facts"  # structured figures over a supplied background, text-first
+
+
 class StageName(StrEnum):
-    """Pipeline stages in execution order."""
+    """Pipeline stages. The explainer runs the first twelve in STAGE_ORDER."""
 
     ACQUIRE = "acquire"
     KNOWLEDGE = "knowledge"
@@ -35,9 +43,11 @@ class StageName(StrEnum):
     RENDER = "render"
     VALIDATE = "validate"
     PACKAGE = "package"
+    FINANCE = "finance"  # finance_facts only: validate spec, compute figures, check assets
 
 
-STAGE_ORDER: tuple[StageName, ...] = tuple(StageName)
+# The explainer pipeline in execution order (finance reels have their own, below).
+STAGE_ORDER: tuple[StageName, ...] = tuple(s for s in StageName if s is not StageName.FINANCE)
 
 # Direct data dependencies. Used for prerequisite checks, fingerprints and staleness.
 S = StageName
@@ -56,15 +66,43 @@ STAGE_DEPENDENCIES: dict[StageName, tuple[StageName, ...]] = {
     S.PACKAGE: (S.CAPTIONS, S.RENDER, S.VALIDATE),
 }
 
+# finance_facts needs no transcripts, scenes, TTS or captions: the on-screen text is the content.
+FINANCE_STAGE_ORDER: tuple[StageName, ...] = (S.FINANCE, S.RENDER, S.VALIDATE, S.PACKAGE)
+FINANCE_DEPENDENCIES: dict[StageName, tuple[StageName, ...]] = {
+    S.FINANCE: (),
+    S.RENDER: (S.FINANCE,),
+    S.VALIDATE: (S.FINANCE, S.RENDER),
+    S.PACKAGE: (S.RENDER, S.VALIDATE),
+}
 
-def downstream_of(stage: StageName) -> list[StageName]:
+_ORDER_BY_FORMAT = {
+    JobFormat.EXPLAINER: STAGE_ORDER,
+    JobFormat.FINANCE_FACTS: FINANCE_STAGE_ORDER,
+}
+_DEPENDENCIES_BY_FORMAT = {
+    JobFormat.EXPLAINER: STAGE_DEPENDENCIES,
+    JobFormat.FINANCE_FACTS: FINANCE_DEPENDENCIES,
+}
+
+
+def stages_for(job_format: JobFormat) -> tuple[StageName, ...]:
+    """The stages a job of this format runs, in execution order."""
+    return _ORDER_BY_FORMAT[job_format]
+
+
+def stage_dependencies(job_format: JobFormat, stage: StageName) -> tuple[StageName, ...]:
+    return _DEPENDENCIES_BY_FORMAT[job_format].get(stage, ())
+
+
+def downstream_of(stage: StageName, job_format: JobFormat = JobFormat.EXPLAINER) -> list[StageName]:
     """All stages that transitively depend on `stage`, in execution order."""
+    order = stages_for(job_format)
     affected = {stage}
-    for candidate in STAGE_ORDER:
-        if any(dep in affected for dep in STAGE_DEPENDENCIES[candidate]):
+    for candidate in order:
+        if any(dep in affected for dep in stage_dependencies(job_format, candidate)):
             affected.add(candidate)
     affected.discard(stage)
-    return [s for s in STAGE_ORDER if s in affected]
+    return [s for s in order if s in affected]
 
 
 class JobStatus(StrEnum):
@@ -72,6 +110,7 @@ class JobStatus(StrEnum):
     ACQUIRING_SOURCE = "acquiring_source"
     EXTRACTING_KNOWLEDGE = "extracting_knowledge"
     RESEARCHING = "researching"
+    PLANNING_REEL = "planning_reel"
     PLANNING_LESSON = "planning_lesson"
     GENERATING_SCRIPT = "generating_script"
     PLANNING_SCENES = "planning_scenes"
@@ -91,6 +130,7 @@ class JobStatus(StrEnum):
 # The status a job reports while the given stage is running.
 STAGE_STATUS: dict[StageName, JobStatus] = {
     S.ACQUIRE: JobStatus.ACQUIRING_SOURCE,
+    S.FINANCE: JobStatus.PLANNING_REEL,
     S.KNOWLEDGE: JobStatus.EXTRACTING_KNOWLEDGE,
     S.RESEARCH: JobStatus.RESEARCHING,
     S.LESSON: JobStatus.PLANNING_LESSON,
@@ -155,13 +195,39 @@ class SourceFile(BaseModel):
     size_bytes: int = Field(ge=0)
 
 
+class ReelSource(BaseModel):
+    """The user-supplied files of a finance_facts job, copied into the job directory."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec: SourceFile
+    background: SourceFile
+    voiceover: SourceFile | None = None  # optional narration; the reel is text-first by default
+
+
 class JobInput(BaseModel):
-    """What the user supplied: a topic and zero or more transcripts. No network sources."""
+    """What the user supplied: a topic and zero or more transcripts, or a finance reel spec.
+
+    Nothing is ever fetched from the network.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     topic: str = Field(min_length=1)
     sources: list[SourceFile] = Field(default_factory=list)
+    format: JobFormat = JobFormat.EXPLAINER
+    reel: ReelSource | None = None
+
+    def fingerprint_data(self) -> dict[str, Any]:
+        """Input as hashed into stage fingerprints.
+
+        The format fields are left out for explainer jobs so their fingerprints are identical
+        to those computed before formats existed.
+        """
+        data = self.model_dump(mode="json")
+        if self.format is JobFormat.EXPLAINER and self.reel is None:
+            del data["format"], data["reel"]
+        return data
 
 
 class JobManifest(BaseModel):
@@ -178,9 +244,14 @@ class JobManifest(BaseModel):
     error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
-    stages: dict[StageName, StageRecord] = Field(
-        default_factory=lambda: {s: StageRecord() for s in STAGE_ORDER}
-    )
+    stages: dict[StageName, StageRecord] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _ensure_stage_records(self) -> JobManifest:
+        """Every stage the job's format runs has a record (pending until it first runs)."""
+        for name in stages_for(self.input.format):
+            self.stages.setdefault(name, StageRecord())
+        return self
 
     @property
     def topic(self) -> str:

@@ -30,7 +30,11 @@ class AcquireStage(Stage):
             outputs.append(target)
             words = len(transcript.text.split())
             ctx.log.info(
-                "Parsed '%s': %d segments, %d words", source.label, len(transcript.segments), words
+                "Parsed '%s': %d segments, %d words, %d non-speech markers removed",
+                source.label,
+                len(transcript.segments),
+                words,
+                transcript.markers_removed,
             )
             entries.append(
                 SourceEntry(
@@ -42,6 +46,7 @@ class AcquireStage(Stage):
                     format=transcript.format,
                     segment_count=len(transcript.segments),
                     word_count=words,
+                    markers_removed=transcript.markers_removed,
                     transcript_path=ctx.paths.relative(target),
                 )
             )

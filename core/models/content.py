@@ -38,6 +38,7 @@ class Transcript(Strict):
 
     format: str  # "txt", "srt" or "vtt"
     segments: list[TranscriptSegment] = Field(min_length=1)
+    markers_removed: int = 0  # non-speech markers such as [music] stripped during parsing
 
     @property
     def text(self) -> str:
@@ -53,6 +54,7 @@ class SourceEntry(Strict):
     format: str
     segment_count: int
     word_count: int
+    markers_removed: int = 0
     transcript_path: str  # parsed transcript, relative to the job directory
 
 

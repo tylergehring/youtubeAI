@@ -17,6 +17,7 @@ from core.providers import (
 from providers.image.mock import MockImageProvider
 from providers.llm.mock import MockLLMProvider
 from providers.research.mock import MockResearchProvider
+from providers.research.passthrough import PassthroughResearchProvider
 from providers.tts.mock import MockTTSProvider
 
 
@@ -28,16 +29,31 @@ class ProviderSet:
     research: ResearchProvider
 
 
+def _openai_llm(settings: Settings) -> LLMProvider:
+    # Imported lazily so mock-only runs never need the openai package or a key.
+    from providers.llm.openai_provider import OpenAILLMProvider
+
+    return OpenAILLMProvider(
+        settings.providers.model_for("llm"), settings=settings.providers.openai
+    )
+
+
 # Register real providers here in later milestones: _FACTORIES["llm"]["openai"] = ...
 _FACTORIES: dict[str, dict[str, Callable[[Settings], Any]]] = {
-    "llm": {"mock": lambda s: MockLLMProvider(s.providers.models.get("llm", "mock-llm-1"))},
+    "llm": {
+        "mock": lambda s: MockLLMProvider(s.providers.model_for("llm")),
+        "openai": lambda s: _openai_llm(s),
+    },
     "tts": {
         "mock": lambda s: MockTTSProvider(
             voice=s.providers.tts.get("voice", "mock-voice-1"),
         )
     },
     "image": {"mock": lambda s: MockImageProvider()},
-    "research": {"mock": lambda s: MockResearchProvider()},
+    "research": {
+        "mock": lambda s: MockResearchProvider(),
+        "passthrough": lambda s: PassthroughResearchProvider(),
+    },
 }
 
 
