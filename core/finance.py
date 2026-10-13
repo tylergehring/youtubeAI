@@ -10,6 +10,7 @@ from core.models.finance import (
     AgeTargetFigures,
     CalculatedRow,
     CalculationRecord,
+    CompoundGrowthFigures,
     ManualFigures,
     ReelRow,
     ReelSpec,
@@ -145,6 +146,48 @@ def _age_target_record(fig: AgeTargetFigures) -> CalculationRecord:
     )
 
 
+def _compound_record(fig: CompoundGrowthFigures) -> CalculationRecord:
+    m = PERIODS_PER_YEAR[fig.compounding]
+    rows: list[CalculatedRow] = []
+    for years in fig.years:
+        value = compound_value(fig.initial_amount, fig.annual_return_pct, m, years)
+        rows.append(
+            CalculatedRow(
+                label=f"After {years} year{'' if years == 1 else 's'}",
+                display=format_money_whole(value),
+                exact=_exact(value),
+                inputs={"years": str(years)},
+            )
+        )
+    rate = plain(fig.annual_return_pct)
+    return CalculationRecord(
+        kind="compound_growth",
+        formula="value = initial_amount * (1 + r/m)^(m * years); r = annual_return_pct / 100",
+        inputs={
+            "initial_amount": plain(fig.initial_amount),
+            "annual_return_pct": rate,
+            "compounding": fig.compounding,
+            "periods_per_year": str(m),
+        },
+        assumptions=[
+            f"{rate}% nominal annual return, compounded {fig.compounding}, held constant",
+            "no contributions or withdrawals; ignores taxes, fees and inflation",
+        ],
+        rounding="display: half-up to the nearest whole dollar",
+        rows=rows,
+    )
+
+
+def compound_value(
+    initial: Decimal, annual_return_pct: Decimal, periods_per_year: int, years: int
+) -> Decimal:
+    """Balance after `years` of compounding `periods_per_year` times a year (no contributions)."""
+    with localcontext(_context()):
+        return initial * (1 + annual_return_pct / 100 / periods_per_year) ** (
+            periods_per_year * years
+        )
+
+
 def calculate(spec: ReelSpec) -> CalculationRecord | None:
     """Figures computed from the spec's assumptions; None for manually typed rows."""
     figures = spec.figures
@@ -152,6 +195,8 @@ def calculate(spec: ReelSpec) -> CalculationRecord | None:
         return _withdrawal_record(figures)
     if isinstance(figures, AgeTargetFigures):
         return _age_target_record(figures)
+    if isinstance(figures, CompoundGrowthFigures):
+        return _compound_record(figures)
     return None
 
 

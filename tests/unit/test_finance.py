@@ -246,6 +246,59 @@ class TestAgeTarget:
         assert calculate(spec) == calculate(spec)
 
 
+class TestCompoundGrowth:
+    def figures(self, **overrides: Any) -> dict[str, Any]:
+        figures: dict[str, Any] = {
+            "kind": "compound_growth",
+            "initial_amount": 10000,
+            "annual_return_pct": 7,
+            "compounding": "annual",
+            "years": [1, 10, 30],
+        }
+        figures.update(overrides)
+        return spec_data(figures=figures)
+
+    def test_known_values(self) -> None:
+        rows, record = resolve_rows(ReelSpec.model_validate(self.figures()))
+        assert [(r.label, r.value) for r in rows] == [
+            ("After 1 year", "$10,700"),
+            ("After 10 years", "$19,672"),  # 10000 * 1.07^10 = 19,671.51
+            ("After 30 years", "$76,123"),  # 10000 * 1.07^30 = 76,122.55
+        ]
+        assert record is not None and record.rows[1].exact == "19671.513573"
+        assert "initial_amount * (1 + r/m)^(m * years)" in record.formula
+
+    def test_monthly_compounding(self) -> None:
+        rows, _ = resolve_rows(ReelSpec.model_validate(self.figures(compounding="monthly")))
+        assert rows[1].value == "$20,097"  # 10000 * (1 + 0.07/12)^120 = 20,096.61
+
+    def test_zero_return_never_grows(self) -> None:
+        rows, _ = resolve_rows(ReelSpec.model_validate(self.figures(annual_return_pct=0)))
+        assert {r.value for r in rows} == {"$10,000"}
+
+    def test_assumptions_are_on_screen(self) -> None:
+        text = resolve_methodology(ReelSpec.model_validate(self.figures()))
+        assert text == "$10K start, 7% annual return, compounded annually, no added contributions."
+        bad = self.figures()
+        bad["methodology"] = "Watch your money grow"
+        with pytest.raises(ValidationError, match="methodology must show"):
+            ReelSpec.model_validate(bad)
+
+    @pytest.mark.parametrize(
+        "missing", ["initial_amount", "annual_return_pct", "compounding", "years"]
+    )
+    def test_assumptions_are_required(self, missing: str) -> None:
+        data = self.figures()
+        del data["figures"][missing]
+        with pytest.raises(ValidationError, match=missing):
+            ReelSpec.model_validate(data)
+
+    @pytest.mark.parametrize("years", [[0], [101], [5, 5]])
+    def test_years_must_be_sensible(self, years: list[int]) -> None:
+        with pytest.raises(ValidationError):
+            ReelSpec.model_validate(self.figures(years=years))
+
+
 class TestSpecValidation:
     def test_manual_rows_need_a_methodology(self) -> None:
         figures = {"kind": "manual", "rows": [{"label": "Age 25", "value": "$500/mo"}]}

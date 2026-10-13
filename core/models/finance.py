@@ -164,8 +164,46 @@ class AgeTargetFigures(_Spec):
         ]
 
 
+class CompoundGrowthFigures(_Spec):
+    """What a lump sum grows to after each number of years: P * (1 + r/m)^(m * years).
+
+    No contributions are added; every assumption is required and shown on screen.
+    """
+
+    kind: Literal["compound_growth"]
+    initial_amount: Number = Field(gt=0)
+    annual_return_pct: Number = Field(ge=0, le=50)  # nominal annual rate, held constant
+    compounding: Frequency
+    years: list[int] = Field(min_length=1, max_length=MAX_ROWS)
+
+    @field_validator("years")
+    @classmethod
+    def _positive_unique_years(cls, values: list[int]) -> list[int]:
+        if any(v < 1 or v > 100 for v in values):
+            raise ValueError("years must be between 1 and 100")
+        if len(set(values)) != len(values):
+            raise ValueError("years must be unique")
+        return values
+
+    def default_methodology(self) -> str:
+        return (
+            f"{format_money_compact(self.initial_amount, trim=True)} start, "
+            f"{plain(self.annual_return_pct)}% annual return, compounded "
+            f"{_COMPOUNDED[self.compounding]}, no added contributions."
+        )
+
+    def required_tokens(self) -> list[str]:
+        return [
+            format_money_compact(self.initial_amount, trim=True),
+            f"{plain(self.annual_return_pct)}%",
+            self.compounding,
+            "no added contributions",
+        ]
+
+
 Figures = Annotated[
-    ManualFigures | WithdrawalRateFigures | AgeTargetFigures, Field(discriminator="kind")
+    ManualFigures | WithdrawalRateFigures | AgeTargetFigures | CompoundGrowthFigures,
+    Field(discriminator="kind"),
 ]
 
 

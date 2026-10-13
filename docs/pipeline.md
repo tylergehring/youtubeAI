@@ -100,7 +100,7 @@ them too.
 |---|---|
 | `title`, `cta` | the question at the top and the closing question; promise/advice wording ("guaranteed", "risk-free", "you should invest"...) is rejected |
 | `methodology` | the assumptions line. Required for `manual` figures; optional for calculated ones, where it is generated (`Using a 4.7% withdrawal rate`). If you write your own it must still show every assumption |
-| `figures` | `kind: manual` (rows of `label`/`value` display text), `withdrawal_rate` or `age_target` (below). 1-12 rows; label <= 32 and value <= 16 characters |
+| `figures` | `kind: manual` (rows of `label`/`value` display text), `withdrawal_rate`, `age_target` or `compound_growth` (below). 1-12 rows; label <= 32 and value <= 16 characters |
 | `disclosure` | always visible, bottom of the frame |
 | `background` | `path` (local file, relative to the spec), `origin` (`user_supplied`, `licensed_project_asset`, `generated_placeholder`), `license` (required text), optional `attribution` |
 | `voiceover` | optional `path` to narration audio you recorded or licensed (`.wav/.mp3/.m4a/.aac`) |
@@ -117,6 +117,10 @@ assumptions, rounding, unrounded results) is written to `reel_plan.json` and `fi
 - `withdrawal_rate`: `required_capital = annual_income / (withdrawal_rate_pct / 100)`, one row per
   `annual_incomes` entry, labelled `$30K/year` (labels are exact, never rounded). Display is
   half-up: `$638K` below $1M (to the nearest $1K), `$1.06M` from $1M (two decimals), `$1.20B` from $1B.
+- `compound_growth`: what a lump sum grows to after each entry of `years`:
+  `value = initial_amount * (1 + r/m)^(m * years)`. **Required:** `initial_amount`,
+  `annual_return_pct`, `compounding`, `years`. No contributions; the methodology line states this.
+  Displayed in whole dollars (half-up), labelled `After 10 years`.
 - `age_target`: the level contribution per period from each `starting_ages` entry to reach
   `target_amount` by `target_age`. **Required, no defaults:** `target_amount`, `target_age`,
   `starting_ages`, `annual_return_pct` (nominal annual), `contribution_frequency` and

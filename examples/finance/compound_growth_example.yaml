@@ -1,0 +1,27 @@
+# Example: what a lump sum grows to over time. Hypothetical numbers; every assumption is required
+# and shown on screen (the methodology line is generated from them).
+schema_version: 1
+template: finance_facts
+
+title: What Does Compound Interest Do to $10,000?
+
+figures:
+  kind: compound_growth
+  initial_amount: 10000
+  annual_return_pct: 7          # nominal annual rate, held constant (real returns vary)
+  compounding: annual           # annual | semiannual | quarterly | monthly
+  years: [5, 10, 15, 20, 25, 30]
+
+cta: How long could you leave your money to grow?
+disclosure: >-
+  Hypothetical illustration for educational purposes only. Assumes a constant return;
+  real returns vary and can be negative. Not financial advice.
+
+background:
+  path: demo_background.mp4      # replace with your own footage or image
+  origin: user_supplied
+  license: Own footage
+
+provenance:
+  verification: illustrative
+  notes: Hypothetical assumptions chosen for illustration; not researched.
