@@ -21,6 +21,7 @@ class RenderStage(Stage):
     """Render scenes and narration into video.mp4, or a finance reel's text over its background."""
 
     name = StageName.RENDER
+    version = 2
 
     def __init__(
         self,

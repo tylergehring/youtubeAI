@@ -8,6 +8,7 @@ from core.models.content import LessonPlan
 from core.models.finance import ReelPlan
 from core.models.manifest import JobFormat, JobStatus, StageName
 from core.models.media import RenderResult, ValidationReport
+from core.reel_metadata import build_reel_metadata
 from core.storage import write_json
 from pipeline import artifacts
 from pipeline.stage import Stage, StageContext, StageResult, make_main
@@ -22,6 +23,7 @@ class PackageStage(Stage):
     """Copy final artifacts to final/ and write the review summary and cost report."""
 
     name = StageName.PACKAGE
+    version = 2
     final_status = JobStatus.AWAITING_REVIEW
 
     def _run_reel(self, ctx: StageContext) -> StageResult:
@@ -50,6 +52,14 @@ class PackageStage(Stage):
                 else None,
                 "provenance": plan.provenance.model_dump(mode="json"),
                 "background": plan.background.model_dump(mode="json"),
+                "music": plan.music.model_dump(mode="json") if plan.music else None,
+                "style": plan.style.model_dump(mode="json"),
+                "fonts": {
+                    name: font.model_dump(mode="json")
+                    for name, font in (
+                        ctx.manifest.input.reel.fonts.items() if ctx.manifest.input.reel else []
+                    )
+                },
             },
         )
         summary = {
@@ -60,6 +70,8 @@ class PackageStage(Stage):
             "duration_s": round(render.duration_s, 2),
             "resolution": f"{render.width}x{render.height}",
             "narration": plan.voiceover is not None,
+            "music": plan.music is not None,
+            "presentation": plan.style.preset,
             "figures_verification": plan.provenance.verification.value,
             "background_origin": plan.background.origin.value,
             "technical_checks_passed": report.technical_passed,
@@ -71,7 +83,9 @@ class PackageStage(Stage):
         }
         summary_path = artifacts.final_summary(paths)
         write_json(summary_path, summary)
-        return StageResult([video, provenance_path, summary_path])
+        metadata = paths.subdir("final") / "publishing.json"
+        ctx.save(metadata, build_reel_metadata(plan))
+        return StageResult([video, provenance_path, summary_path, metadata])
 
     def run(self, ctx: StageContext) -> StageResult:
         if ctx.manifest.input.format is JobFormat.FINANCE_FACTS:

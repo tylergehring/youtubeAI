@@ -5,6 +5,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .env
+client_secret*.json
+oauth-client*.json
+youtube-token*.json
+workspace/batches/
 workspace/jobs/*
 workspace/output/*
 !workspace/jobs/.gitkeep

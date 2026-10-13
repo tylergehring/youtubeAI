@@ -151,8 +151,76 @@ assumptions, rounding, unrounded results) is written to `reel_plan.json` and `fi
   `finance.max_asset_mb`. Backgrounds under 480 px short side log a warning. Missing, wrongly
   typed, empty, corrupt or tampered files fail with a clear error (at creation, and again in the
   `finance` stage).
-- Voiceover is optional. Without one the video has no audio track and the audio checks are
-  reported as skipped; with one it is mixed in and can only lengthen the reel.
+- Voiceover and music are optional. With neither, there is no audio track and audio checks
+  are skipped. Voiceover can only lengthen the reel; music never changes its duration.
+
+### Single-video editorial workflow
+
+```powershell
+python -m pipeline.reel --spec examples\finance\editorial_compound.yaml
+```
+
+This creates a new job, runs finance -> render -> validate -> package, and writes key frames,
+a contact sheet and `final/cover.png`. It never overwrites an existing job. To resume after
+a stage failure, use `python -m pipeline.run --job JOB_ID`, followed by
+`python -m pipeline.preview --job JOB_ID` for preview frames.
+
+The optional `style` block selects `preset: editorial` (classic remains the default).
+Editorial defaults to left-aligned headlines and ruled rows, with a minimum 85% text scale.
+Use roughly 4-6 rows; shorten the text if it cannot fit rather than making it unreadably small.
+Both presets accept `title_align: left | center`, `row_format: panels | rules`,
+`title_size: 48..110` and `row_size: 36..64` (reference pixels at 1080 wide).
+`eyebrow` adds a short label above the headline. Explicit YAML multiline text preserves line
+breaks; this is plain text, not HTML or Markdown rich-text rendering.
+
+`style.font_regular` and `style.font_bold` accept local TTF/OTF/TTC paths relative to the spec.
+`style.font_license` is required when either is supplied. Font files are validated, copied and
+hashed at job creation, checked at rendering, and recorded in provenance. Without per-spec
+fonts, the existing global font settings/system fallback apply. No fonts are downloaded.
+
+Optional `pacing: {row_interval_s: 1.2, end_hold_s: 4}` overrides the row spacing and final hold
+for this video without changing global defaults. Other reveal settings remain in `finance.timing`.
+
+```yaml
+music:
+  path: music.wav
+  license: Your licence statement
+  attribution: Required artist credit
+  start_s: 0
+  gain_db: -12
+  fade_in_s: 0.5
+  fade_out_s: 1.5
+```
+
+Music paths are local, relative to the spec, and use the configured audio extensions. Music
+must contain audible audio; `start_s` must precede the source's end. The track loops as needed,
+starts at that offset and is trimmed to the reel duration. Processing uses FFmpeg loudnorm
+(-18 LUFS target, not a certified two-pass loudness measurement), then `gain_db`, fades and a
+peak limiter. With narration, a sidechain compressor lowers music during speech. Keep voiceover
+levels sensible and listen to the exported mix before publishing. The source video's own audio
+is always discarded.
+
+`background.crop_x` and `crop_y` are 0..1 focal positions in the available crop range:
+0 = left/top, 0.5 = centred (default), 1 = right/bottom. They work for both images and video.
+The editorial preset encodes H.264 at CRF 18 / medium; classic keeps CRF 20 / veryfast.
+All audio outputs use AAC at 192 kbps, 44.1 kHz.
+
+`final/publishing.json` is assembled from the actual resolved plan, not an LLM's recollection:
+title (under 100 characters), description containing the displayed figures and assumptions,
+source dates/URLs, user-provided credits, and topic-relevant hashtags. It is a draft requiring
+review; no SEO performance is promised, no facts are added, and nothing is uploaded.
+
+Publishing remains separate: `python -m pipeline.youtube upload` consumes the final video and
+publishing draft, requires successful technical QA, explicit approval and confirmation of rights,
+and checks the authorized channel against a required channel ID. See the README's YouTube section.
+It stores a durable receipt and verifies YouTube's private future schedule before moving an
+approved job to `uploaded`; ambiguous failures retain the session/video ID for recovery.
+
+Reference review: [ShortFormGenerator](https://github.com/DrewStewart7/ShortFormGenerator)
+uses split-screen clip composition; [Neural Reels](https://github.com/double-k-3033/NR-AI-short-form-video-generator)
+separates scene/media assembly from script-grounded SEO output. This repo follows that separation
+but retains deterministic single-background finance layouts, explicit framing and restrained
+animation instead of randomized effects. No external implementation or prompt was copied.
 
 ### Rendering approach (why not Remotion)
 
@@ -170,10 +238,13 @@ Content is data (the spec), not code.
 ### Validation checks (reels)
 
 `video_exists`, `file_size`, `video_opens`, `duration_reasonable`, `resolution`, `frame_rate`,
-`audio_present`/`audio_not_silent` (only when a voiceover exists), `background_asset` (file + hash),
+`audio_present`/`audio_not_silent` (when voiceover or music exists), `background_asset` (file + hash),
+`music_asset`/`font_assets` when supplied, `music_matches_spec`, `presentation_matches_spec`,
 `figures_match_spec`, `provenance_recorded`, `all_text_rendered`, `text_in_safe_area`.
+Licence text is recorded, not legally verified; a passing asset/hash check does not clear rights.
 
 ### Limitations
 
 Single background, single column of up to 12 rows; no per-word captions; fonts depend on the
-machine unless pinned; Jenkinsfile still targets the explainer only.
+machine unless pinned; Jenkinsfile still targets the explainer only. Safe margins are a template,
+not a guarantee against every platform's UI: review in the intended app before publication.

@@ -1,0 +1,199 @@
+# A campaign: families of videos. Each family = one calculator + a grid of assumptions + wording.
+# `python -m pipeline.batch plan --campaign config/campaigns/finance_1000.yaml` expands this into
+# ~1000 validated reel specs; every on-screen number is calculated by code from the grid values.
+#
+# Placeholders in titles/ctas: {field}, {field|money}, {field|pct}, {field|max}, {field|min},
+# {field|title}, {field|count} where field is any figure field of the family's kind (see docs/finance_reel_brief.md).
+# Lists in `grid` are alternatives; list-valued fields (years, starting_ages, ...) therefore appear
+# as a list of lists. `fixed` holds constants.
+name: finance_1000
+count: 1000
+seed: 1
+
+disclosure: >-
+  Hypothetical illustration for educational purposes only. Returns vary and can be negative.
+  Not financial advice.
+
+accent_colors: ["#FFD166", "#06D6A0", "#4CC9F0", "#FF9F68", "#C77DFF"]
+
+backgrounds:
+  # Put your own licensed 9:16 clips in workspace/backgrounds/<mood>/ (or directly in the folder)
+  # and uncomment these, using the licence the clips came with. With no `library`, abstract
+  # backgrounds are generated locally instead.
+  # library: workspace/backgrounds
+  # license: Pexels License
+  # origin: user_supplied
+
+publishing:
+  start_date: 2026-11-01
+  posts_per_day: 3
+  first_post_hour: 9
+  common_hashtags: [shorts, personalfinance, moneytips]
+  max_hashtags: 6
+
+families:
+  - id: lump_sum
+    kind: compound_growth
+    mood: growth
+    weight: 2
+    grid:
+      initial_amount: [1000, 2000, 2500, 5000, 10000, 15000, 20000, 25000, 50000, 75000, 100000, 150000, 200000]
+      annual_return_pct: [4, 5, 6, 7, 8, 9, 10]
+      compounding: [annual, monthly]
+      years: [[5, 10, 15, 20, 25, 30], [3, 5, 10, 15, 20, 40]]
+    titles:
+      - "What Does {initial_amount|money} Become in {years|max} Years at {annual_return_pct|pct}?"
+      - "{initial_amount|money} Over {years|max} Years at {annual_return_pct|pct}, Compounded {compounding|title}"
+      - "How Much Could {initial_amount|money} Grow at {annual_return_pct|pct} ({compounding|title})?"
+    ctas:
+      - "How long could you leave a lump sum untouched?"
+      - "What would you do with a balance like this in {years|max} years?"
+      - "What is the longest you have ever left money invested?"
+    hashtags: [compoundinterest, investing, wealthbuilding]
+
+  - id: monthly_saving
+    kind: contribution_growth
+    mood: growth
+    weight: 2
+    fixed: {contribution_frequency: monthly, compounding: monthly}
+    grid:
+      contribution_amount: [50, 100, 200, 250, 300, 400, 500, 600, 750, 1000, 1200, 1500, 2000]
+      annual_return_pct: [4, 5, 6, 7, 8, 9, 10]
+      years: [[5, 10, 15, 20, 25, 30], [10, 20, 30, 40]]
+    titles:
+      - "What Does {contribution_amount|money} a Month Become in {years|max} Years?"
+      - "Saving {contribution_amount|money}/Month for {years|max} Years at {annual_return_pct|pct}"
+      - "{contribution_amount|money} Monthly at {annual_return_pct|pct}: The Long Game"
+    ctas:
+      - "How much could you realistically set aside each month?"
+      - "What monthly amount feels doable for you?"
+      - "What is stopping you from saving more each month?"
+    hashtags: [saving, compounding, moneyhabits]
+
+  - id: retirement_capital
+    kind: withdrawal_rate
+    mood: retirement
+    grid:
+      withdrawal_rate_pct: [3, 3.5, 4, 4.5, 5, 5.5]
+      annual_incomes:
+        - [30000, 40000, 50000, 60000, 70000, 80000, 100000, 120000]
+        - [25000, 50000, 75000, 100000, 150000, 200000]
+        - [20000, 30000, 40000, 50000, 60000, 80000]
+        - [40000, 60000, 80000, 100000, 125000, 150000, 200000]
+    titles:
+      - "How Much Do You Need to Retire at a {withdrawal_rate_pct|pct} Withdrawal Rate?"
+      - "Funding {annual_incomes|min|money} to {annual_incomes|max|money} a Year at {withdrawal_rate_pct|pct}"
+      - "Retirement Income vs. Savings: {annual_incomes|min|money} to {annual_incomes|max|money} ({withdrawal_rate_pct|pct})"
+    ctas:
+      - "How much annual retirement income would make you feel secure?"
+      - "What yearly income do you picture in retirement?"
+    hashtags: [retirement, fire, financialindependence]
+
+  - id: age_goal
+    kind: age_target
+    mood: retirement
+    weight: 2
+    fixed: {contribution_frequency: monthly, compounding: monthly}
+    grid:
+      target_amount: [250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 5000000]
+      target_age: [55, 60, 65, 67]
+      annual_return_pct: [5, 6, 7, 8]
+      starting_ages: [[25, 30, 35, 40, 45, 50], [20, 25, 30, 35, 40, 45, 50]]
+    titles:
+      - "Reaching {target_amount|money} by {target_age}: Start at {starting_ages|min} or {starting_ages|max}? ({annual_return_pct|pct})"
+      - "Start at {starting_ages|min} or {starting_ages|max}? The Monthly Cost of {target_amount|money} by {target_age}"
+      - "What Does It Take to Hit {target_amount|money} by {target_age} at {annual_return_pct|pct}?"
+    ctas:
+      - "How old were you when you started saving for the future?"
+      - "What age do you wish you had started?"
+    hashtags: [investing, retirement, startearly]
+
+  - id: home_loan
+    kind: loan_payment
+    mood: housing
+    grid:
+      principal: [150000, 200000, 250000, 300000, 350000, 400000, 500000, 600000, 750000, 1000000]
+      term_years: [15, 20, 30]
+      annual_rates_pct: [[3, 4, 5, 6, 7, 8], [4.5, 5, 5.5, 6, 6.5, 7, 7.5]]
+    titles:
+      - "Monthly Payment on a {term_years}-Year {principal|money} Home Loan, {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+      - "{principal|money} Mortgage Over {term_years} Years: Rates {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+      - "A {term_years}-Year {principal|money} Loan at {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+    ctas:
+      - "What monthly housing payment would feel comfortable to you?"
+      - "How much does a 1% rate change matter to you?"
+    disclosure: >-
+      Hypothetical illustration for educational purposes only. Principal and interest only; excludes
+      taxes, insurance and fees. Not financial advice.
+    hashtags: [mortgage, homebuying, realestate]
+
+  - id: car_loan
+    kind: loan_payment
+    mood: auto
+    grid:
+      principal: [10000, 15000, 20000, 25000, 30000, 40000, 50000, 60000]
+      term_years: [3, 4, 5, 6, 7]
+      annual_rates_pct: [[2, 4, 6, 8, 10, 12], [3, 4.5, 6, 7.5, 9, 10.5]]
+    titles:
+      - "Monthly Payment on a {term_years}-Year {principal|money} Car Loan, {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+      - "A {term_years}-Year {principal|money} Auto Loan: {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+    ctas:
+      - "What monthly car payment is too much for you?"
+      - "Would you pick a shorter loan or a lower payment?"
+    disclosure: >-
+      Hypothetical illustration for educational purposes only. Principal and interest only; excludes
+      taxes, fees and insurance. Not financial advice.
+    hashtags: [carloan, cars, budgeting]
+
+  - id: student_loan
+    kind: loan_payment
+    mood: education
+    grid:
+      principal: [20000, 30000, 40000, 60000, 80000, 100000]
+      term_years: [10, 15, 20, 25]
+      annual_rates_pct: [[3, 4, 5, 6, 7, 8], [4.5, 5.5, 6.5, 7.5, 8.5]]
+    titles:
+      - "What a {principal|money} Student Loan Costs Monthly: {term_years} Years, {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+      - "{principal|money} in Student Debt Over {term_years} Years at {annual_rates_pct|min|pct} to {annual_rates_pct|max|pct}"
+    ctas:
+      - "How would you pay off student debt faster?"
+      - "What would you do with the money after the last payment?"
+    disclosure: >-
+      Hypothetical illustration for educational purposes only. Principal and interest only; real
+      loan terms vary. Not financial advice.
+    hashtags: [studentloans, debtfree, college]
+
+  - id: cash_erosion
+    kind: inflation_erosion
+    mood: cash
+    grid:
+      amount: [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+      inflation_rate_pct: [2, 2.5, 3, 3.5, 4, 5, 6]
+      years: [[5, 10, 15, 20, 25, 30], [10, 20, 30, 40]]
+    titles:
+      - "What Is {amount|money} Worth After {years|max} Years at {inflation_rate_pct|pct} Inflation?"
+      - "Inflation at {inflation_rate_pct|pct}: What Happens to {amount|money} in {years|max} Years?"
+    ctas:
+      - "Does inflation change how you think about holding cash?"
+      - "How do you keep your money's buying power over time?"
+    disclosure: >-
+      Hypothetical illustration for educational purposes only. Future inflation varies and is not
+      predictable. Not financial advice.
+    hashtags: [inflation, purchasingpower, moneybasics]
+
+  - id: double_it
+    kind: doubling_time
+    mood: time
+    grid:
+      annual_returns_pct:
+        - [2, 4, 6, 8, 10, 12]
+        - [3, 5, 7, 9, 11]
+        - [1, 2, 3, 5, 7, 10]
+        - [4, 6, 8, 10, 12, 15]
+        - [5, 6, 7, 8, 9, 10]
+        - [2, 3, 4, 5, 6, 7, 8]
+    titles:
+      - "How Fast Does Money Double at {annual_returns_pct|min|pct} to {annual_returns_pct|max|pct}?"
+    ctas:
+      - "How long would you wait for your money to double?"
+    hashtags: [ruleof72, compounding, investing]

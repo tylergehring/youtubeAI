@@ -120,6 +120,12 @@ class ReelLayoutResult:
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: float) -> list[str]:
     """Greedy word wrap. A single word wider than the line is left on its own line (the caller's
     fit check then rejects it)."""
+    if "\n" in text:
+        return [
+            line
+            for paragraph in text.split("\n")
+            for line in (wrap_text(paragraph, font, max_width) if paragraph.strip() else [""])
+        ]
     lines: list[str] = []
     current = ""
     for word in text.split():
@@ -158,6 +164,7 @@ def _text_block(
     stroke: int,
     margin: int,
     size: int,
+    align: str = "center",
 ) -> tuple[Image.Image, int]:
     """Centered lines on a transparent canvas with a soft drop shadow; returns (image, text_h)."""
     line_h = _line_height(font)
@@ -168,7 +175,7 @@ def _text_block(
     shadow_draw, text_draw = ImageDraw.Draw(shadow), ImageDraw.Draw(text)
     offset = max(1, round(size * 0.04))
     for index, line in enumerate(lines):
-        x = margin + (width - font.getlength(line)) / 2
+        x = margin if align == "left" else margin + (width - font.getlength(line)) / 2
         y = margin + index * line_h
         _draw_text(shadow_draw, (x, y + offset), line, font, (0, 0, 0, 215), stroke)
         _draw_text(text_draw, (x, y), line, font, color, stroke)
@@ -214,6 +221,9 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
     panel_rgb = hex_rgb(colors.panel)
     panel_fill = (*panel_rgb, round(255 * finance.panel_opacity))
     timing = plan.timing
+    editorial = plan.style.preset == "editorial"
+    alignment = plan.style.title_align or ("left" if editorial else "center")
+    row_format = plan.style.row_format or ("rules" if editorial else "panels")
     margin = px(14)
     blocks: list[Block] = []
 
@@ -235,7 +245,7 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
 
     def text_element(
         name: str, text: str, base_px: int, bold: bool, color: RGBA, at: float, y: int,
-        slide: bool = True,
+        slide: bool = True, align: str = "center",
     ) -> int:  # fmt: skip
         size = px(base_px)
         font = fonts.get(bold, size)
@@ -243,7 +253,7 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
         if any(font.getlength(line) > inner for line in lines):
             raise _DoesNotFit(name)
         stroke = max(1, size // 30) if bold and fonts.synthetic_bold else 0
-        image, text_h = _text_block(lines, font, color, inner, stroke, margin, size)
+        image, text_h = _text_block(lines, font, color, inner, stroke, margin, size, align)
         add(name, image, x0, y, text_h, inner, at, slide)
         return text_h
 
@@ -255,8 +265,27 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
     disclosure_top = y1 - disclosure_h
 
     cursor = y0
+    if plan.style.eyebrow:
+        cursor += text_element(
+            "eyebrow",
+            plan.style.eyebrow,
+            28,
+            True,
+            accent_rgb,
+            timing.title_at_s,
+            cursor,
+            align=alignment,
+        )
+        cursor += px(22)
     cursor += text_element(
-        "title", plan.title, _TITLE_PX, True, text_rgb, timing.title_at_s, cursor
+        "title",
+        plan.title,
+        plan.style.title_size,
+        True,
+        text_rgb,
+        timing.title_at_s,
+        cursor,
+        align=alignment,
     )
     cursor += px(26)
     cursor += text_element(
@@ -267,12 +296,13 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
         muted_rgb,
         timing.methodology_at_s,
         cursor,
+        align=alignment,
     )
     cursor += px(38)
 
     # One row font size for every row: the largest that fits the widest label + value.
     pad, bar = px(18), px(8)
-    row_size = px(_ROW_PX)
+    row_size = px(plan.style.row_size)
     floor = max(1, round(row_size * 0.7))
     while True:
         label_font, value_font = fonts.get(False, row_size), fonts.get(True, row_size)
@@ -284,25 +314,36 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
         row_size -= 1
     if widest + px(40) > inner - 2 * pad - bar:
         raise _DoesNotFit("rows")
-    row_h = round(row_size * 1.0) + 2 * pad
+    row_h = round(row_size * (1.25 if editorial else 1.0)) + 2 * pad
     row_gap = px(12)
     stroke = max(1, row_size // 30) if fonts.synthetic_bold else 0
     for index, row in enumerate(plan.rows):
         panel = Image.new("RGBA", (inner + 2 * margin, row_h + 2 * margin), (0, 0, 0, 0))
         draw = ImageDraw.Draw(panel)
-        draw.rounded_rectangle(
-            (margin, margin, margin + inner - 1, margin + row_h - 1),
-            radius=row_h // 4,
-            fill=panel_fill,
-        )
-        inset = round(row_h * 0.22)
-        draw.rounded_rectangle(
-            (margin + px(14), margin + inset, margin + px(14) + bar, margin + row_h - inset),
-            radius=bar // 2,
-            fill=accent_rgb,
-        )
+        if row_format == "panels":
+            draw.rounded_rectangle(
+                (margin, margin, margin + inner - 1, margin + row_h - 1),
+                radius=row_h // 4,
+                fill=panel_fill,
+            )
+            inset = round(row_h * 0.22)
+            draw.rounded_rectangle(
+                (margin + px(14), margin + inset, margin + px(14) + bar, margin + row_h - inset),
+                radius=bar // 2,
+                fill=accent_rgb,
+            )
+        else:
+            draw.rectangle(
+                (margin, margin, margin + inner - 1, margin + row_h - 1),
+                fill=panel_fill,
+            )
+            draw.line(
+                (margin, margin + row_h - 1, margin + inner - 1, margin + row_h - 1),
+                fill=(*hex_rgb(colors.muted), 85),
+                width=px(1),
+            )
         text_y = margin + (row_h - _line_height(label_font)) / 2
-        label_x = margin + px(14) + bar + pad
+        label_x = margin + (pad if row_format == "rules" else px(14) + bar + pad)
         _draw_text(draw, (label_x, text_y), row.label, label_font, text_rgb)
         value_x = margin + inner - pad - value_font.getlength(row.value)
         _draw_text(draw, (value_x, text_y), row.value, value_font, accent_rgb, stroke)
@@ -326,10 +367,10 @@ def _compose(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet, scale: fl
     draw = ImageDraw.Draw(cta_panel)
     draw.rounded_rectangle(
         (margin, margin, margin + inner - 1, margin + cta_h - 1),
-        radius=px(26),
+        radius=px(10 if editorial else 26),
         fill=panel_fill,
         outline=accent_rgb,
-        width=max(2, px(4)),
+        width=max(1, px(2 if editorial else 4)),
     )
     cta_panel.alpha_composite(text_img, (margin + cta_pad, margin + cta_pad))
     add("cta", cta_panel, x0, cursor, cta_h, inner, timing.cta_at_s)
@@ -348,10 +389,15 @@ def build_layout(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet) -> Re
     """Fit the plan's text inside the safe area, shrinking type (never below `min_text_scale`)
     until it fits. Raises RenderError when the content is simply too long."""
     base = finance.width / _REFERENCE_WIDTH
+    minimum = (
+        max(finance.min_text_scale, 0.85)
+        if plan.style.preset == "editorial"
+        else (finance.min_text_scale)
+    )
     scale = 1.0
     blocks: list[Block] | None = None
     failed = ""
-    while scale >= finance.min_text_scale - 1e-9:
+    while scale >= minimum - 1e-9:
         try:
             blocks = _compose(plan, finance, fonts, base * scale)
             break
@@ -360,7 +406,7 @@ def build_layout(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet) -> Re
             scale = round(scale - _SCALE_STEP, 4)
     if blocks is None:
         raise RenderError(
-            f"Reel text does not fit the safe area even at {finance.min_text_scale:.0%} size "
+            f"Reel text does not fit the safe area even at {minimum:.0%} size "
             f"(stopped at {failed!r}). Shorten the title, labels or CTA, or reduce the row count."
         )
     margins = finance.safe_margins
@@ -388,7 +434,14 @@ def build_layout(plan: ReelPlan, finance: FinanceSettings, fonts: FontSet) -> Re
     )  # fmt: skip
 
 
-def prepare_background_image(source: Path, width: int, height: int, out: Path) -> None:
+def prepare_background_image(
+    source: Path,
+    width: int,
+    height: int,
+    out: Path,
+    *,
+    centering: tuple[float, float] = (0.5, 0.5),
+) -> None:
     """Scale-and-crop ("cover") an image to the frame, honouring EXIF orientation."""
     try:
         with Image.open(source) as opened:
@@ -396,6 +449,7 @@ def prepare_background_image(source: Path, width: int, height: int, out: Path) -
                 ImageOps.exif_transpose(opened).convert("RGB"),
                 (width, height),
                 Image.Resampling.LANCZOS,
+                centering=centering,
             )
     except Exception as exc:  # noqa: BLE001 - corrupt files raise many Pillow types
         raise RenderError(f"Cannot read background image {source.name}: {exc}") from exc

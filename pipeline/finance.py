@@ -8,7 +8,14 @@ from pathlib import Path
 from core.config import Settings
 from core.exceptions import RenderError, StageError
 from core.finance import build_timing, resolve_methodology, resolve_rows
-from core.models.finance import ReelPlan, ReelSpec, ResolvedBackground, ResolvedVoiceover
+from core.models.finance import (
+    ReelPlan,
+    ReelSpec,
+    ReelStyle,
+    ResolvedBackground,
+    ResolvedMusic,
+    ResolvedVoiceover,
+)
 from core.models.manifest import SourceFile, StageName
 from core.reel_input import media_type_for, parse_reel_spec, sha256_of, verify_image
 from pipeline import artifacts
@@ -20,6 +27,7 @@ class FinanceStage(Stage):
     """Resolve a finance reel spec into a verified, renderable plan."""
 
     name = StageName.FINANCE
+    version = 2
 
     def __init__(
         self,
@@ -47,8 +55,22 @@ class FinanceStage(Stage):
         warnings: list[str] = []
         background = self._inspect_background(ctx, reel.background, spec, warnings)
         voiceover = self._inspect_voiceover(ctx, reel.voiceover) if reel.voiceover else None
+        music = None
+        if reel.music and spec.music:
+            audio = self._inspect_voiceover(ctx, reel.music)
+            if spec.music.start_s >= audio.duration_s:
+                raise StageError("music.start_s must be before the end of the supplied track")
+            music = ResolvedMusic(**audio.model_dump(), settings=spec.music)
+        style_data = spec.style.model_dump()
+        for name, source in reel.fonts.items():
+            self._stored(ctx, source)
+            style_data[name] = source.stored_path
+        style = ReelStyle.model_validate(style_data)
 
         finance = ctx.settings.finance
+        timing = finance.timing
+        if spec.pacing:
+            timing = timing.model_copy(update=spec.pacing.model_dump())
         plan = ReelPlan(
             title=spec.title,
             methodology=resolve_methodology(spec),
@@ -58,10 +80,12 @@ class FinanceStage(Stage):
             accent_color=spec.accent_color,
             background=background,
             voiceover=voiceover,
+            music=music,
+            style=style,
             provenance=spec.provenance,
             calculation=calculation,
             timing=build_timing(
-                len(rows), finance.timing, finance.fps, voiceover.duration_s if voiceover else None
+                len(rows), timing, finance.fps, voiceover.duration_s if voiceover else None
             ),
             warnings=warnings,
         )
@@ -118,13 +142,21 @@ class FinanceStage(Stage):
             origin=spec.background.origin,
             license=spec.background.license,
             attribution=spec.background.attribution,
+            crop_x=spec.background.crop_x,
+            crop_y=spec.background.crop_y,
         )
 
     def _inspect_voiceover(self, ctx: StageContext, source: SourceFile) -> ResolvedVoiceover:
         path = self._stored(ctx, source)
         info = self._ffmpeg_factory(ctx.settings).analyze(path)
         if not info.has_audio or info.duration_s <= 0:
-            raise RenderError(f"Voiceover {path.name} has no readable audio")
+            raise RenderError(f"{source.label} {path.name} has no readable audio")
+        if source.label == "Music" and (
+            info.mean_volume_db is None or info.mean_volume_db <= ctx.settings.qa.min_mean_volume_db
+        ):
+            raise RenderError(
+                f"Music {path.name} is silent or below the configured audio threshold"
+            )
         return ResolvedVoiceover(
             stored_path=source.stored_path, sha256=source.sha256, duration_s=info.duration_s
         )

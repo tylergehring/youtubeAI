@@ -203,6 +203,8 @@ class ReelSource(BaseModel):
     spec: SourceFile
     background: SourceFile
     voiceover: SourceFile | None = None  # optional narration; the reel is text-first by default
+    music: SourceFile | None = None
+    fonts: dict[str, SourceFile] = Field(default_factory=dict)
 
 
 class JobInput(BaseModel):

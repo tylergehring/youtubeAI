@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 from core.models.content import Strict
-from core.money import format_money_compact, plain, to_decimal
+from core.money import format_money_compact, format_money_label, plain, to_decimal
 
 MAX_ROWS = 12
 
@@ -67,6 +67,14 @@ def _reject_guarantees(text: str, where: str) -> None:
 
 
 # ------------------------------------------------------------------ figures
+
+
+def _check_years(values: list[int]) -> list[int]:
+    if any(v < 1 or v > 100 for v in values):
+        raise ValueError("years must be between 1 and 100")
+    if len(set(values)) != len(values):
+        raise ValueError("years must be unique")
+    return values
 
 
 class ReelRow(_Spec):
@@ -179,11 +187,7 @@ class CompoundGrowthFigures(_Spec):
     @field_validator("years")
     @classmethod
     def _positive_unique_years(cls, values: list[int]) -> list[int]:
-        if any(v < 1 or v > 100 for v in values):
-            raise ValueError("years must be between 1 and 100")
-        if len(set(values)) != len(values):
-            raise ValueError("years must be unique")
-        return values
+        return _check_years(values)
 
     def default_methodology(self) -> str:
         return (
@@ -201,8 +205,124 @@ class CompoundGrowthFigures(_Spec):
         ]
 
 
+class ContributionGrowthFigures(_Spec):
+    """What regular contributions grow to after each number of years, from a $0 balance."""
+
+    kind: Literal["contribution_growth"]
+    contribution_amount: Number = Field(gt=0)
+    contribution_frequency: Frequency
+    annual_return_pct: Number = Field(ge=0, le=50)  # nominal annual rate, held constant
+    compounding: Frequency
+    contribution_timing: Literal["end", "start"] = "end"  # of each contribution period
+    years: list[int] = Field(min_length=1, max_length=MAX_ROWS)
+
+    @field_validator("years")
+    @classmethod
+    def _positive_unique_years(cls, values: list[int]) -> list[int]:
+        return _check_years(values)
+
+    def default_methodology(self) -> str:
+        return (
+            f"{format_money_label(self.contribution_amount)} "
+            f"{self.contribution_frequency} contributions, "
+            f"{plain(self.annual_return_pct)}% annual return, compounded "
+            f"{_COMPOUNDED[self.compounding]}."
+        )
+
+    def required_tokens(self) -> list[str]:
+        return [
+            format_money_label(self.contribution_amount),
+            self.contribution_frequency,
+            f"{plain(self.annual_return_pct)}%",
+            self.compounding,
+        ]
+
+
+class LoanPaymentFigures(_Spec):
+    """Monthly payment on a fixed-rate loan for each interest rate shown."""
+
+    kind: Literal["loan_payment"]
+    principal: Number = Field(gt=0)
+    term_years: int = Field(ge=1, le=50)
+    annual_rates_pct: list[Number] = Field(min_length=1, max_length=MAX_ROWS)
+
+    @field_validator("annual_rates_pct")
+    @classmethod
+    def _valid_rates(cls, values: list[Decimal]) -> list[Decimal]:
+        if any(v < 0 or v > 50 for v in values):
+            raise ValueError("annual rates must be between 0 and 50 percent")
+        if len(set(values)) != len(values):
+            raise ValueError("annual rates must be unique")
+        return values
+
+    def default_methodology(self) -> str:
+        return (
+            f"{format_money_label(self.principal)} loan, {self.term_years}-year "
+            "term, fixed rate, monthly payments."
+        )
+
+    def required_tokens(self) -> list[str]:
+        return [format_money_label(self.principal), f"{self.term_years}-year"]
+
+
+class InflationErosionFigures(_Spec):
+    """What an amount held as cash is worth in today's dollars after each number of years."""
+
+    kind: Literal["inflation_erosion"]
+    amount: Number = Field(gt=0)
+    inflation_rate_pct: Number = Field(gt=0, le=50)
+    years: list[int] = Field(min_length=1, max_length=MAX_ROWS)
+
+    @field_validator("years")
+    @classmethod
+    def _positive_unique_years(cls, values: list[int]) -> list[int]:
+        return _check_years(values)
+
+    def default_methodology(self) -> str:
+        return (
+            f"{format_money_label(self.amount)} today, "
+            f"{plain(self.inflation_rate_pct)}% annual inflation, held constant."
+        )
+
+    def required_tokens(self) -> list[str]:
+        return [
+            format_money_label(self.amount),
+            f"{plain(self.inflation_rate_pct)}%",
+            "inflation",
+        ]
+
+
+class DoublingTimeFigures(_Spec):
+    """Years for a balance to double at each annual return, compounded annually."""
+
+    kind: Literal["doubling_time"]
+    annual_returns_pct: list[Number] = Field(min_length=1, max_length=MAX_ROWS)
+
+    @field_validator("annual_returns_pct")
+    @classmethod
+    def _valid_returns(cls, values: list[Decimal]) -> list[Decimal]:
+        if any(v <= 0 or v > 100 for v in values):
+            raise ValueError("annual returns must be greater than 0 and at most 100 percent")
+        if len(set(values)) != len(values):
+            raise ValueError("annual returns must be unique")
+        return values
+
+    def default_methodology(self) -> str:
+        return "Compounded annually at a constant return, no added contributions."
+
+    def required_tokens(self) -> list[str]:
+        return ["annually", "no added contributions"]
+
+
 Figures = Annotated[
-    ManualFigures | WithdrawalRateFigures | AgeTargetFigures | CompoundGrowthFigures,
+    ManualFigures
+    | WithdrawalRateFigures
+    | AgeTargetFigures
+    | CompoundGrowthFigures
+    | ContributionGrowthFigures
+    | LoanPaymentFigures
+    | InflationErosionFigures
+    | DoublingTimeFigures,
     Field(discriminator="kind"),
 ]
 
@@ -223,6 +343,8 @@ class BackgroundSpec(_Spec):
     origin: BackgroundOrigin
     license: str = Field(min_length=3, max_length=200)  # e.g. "Own footage", "Pexels License"
     attribution: str | None = Field(default=None, max_length=200)
+    crop_x: float = Field(default=0.5, ge=0, le=1)
+    crop_y: float = Field(default=0.5, ge=0, le=1)
 
     @field_validator("path")
     @classmethod
@@ -243,6 +365,43 @@ class VoiceoverSpec(_Spec):
         if re.match(r"^[a-z][a-z0-9+.-]*://", value, re.IGNORECASE):
             raise ValueError("voiceover must be a local file; URLs are never fetched")
         return value
+
+
+class MusicSpec(VoiceoverSpec):
+    license: str = Field(min_length=1, max_length=300)
+    attribution: str | None = Field(default=None, max_length=200)
+    start_s: float = Field(default=0, ge=0, allow_inf_nan=False)
+    gain_db: float = Field(default=-12, ge=-40, le=0)
+    fade_in_s: float = Field(default=0.5, gt=0, le=5)
+    fade_out_s: float = Field(default=1.5, gt=0, le=5)
+
+
+class ReelStyle(_Spec):
+    preset: Literal["classic", "editorial"] = "classic"
+    eyebrow: str | None = Field(default=None, min_length=1, max_length=40)
+    title_align: Literal["left", "center"] | None = None
+    row_format: Literal["panels", "rules"] | None = None
+    title_size: int = Field(default=80, ge=48, le=110)
+    row_size: int = Field(default=46, ge=36, le=64)
+    font_regular: str | None = Field(default=None, min_length=1, max_length=500)
+    font_bold: str | None = Field(default=None, min_length=1, max_length=500)
+    font_license: str | None = Field(default=None, min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def _validate_fonts_and_text(self) -> ReelStyle:
+        if self.eyebrow:
+            _reject_guarantees(self.eyebrow, "eyebrow")
+        if (self.font_regular or self.font_bold) and not self.font_license:
+            raise ValueError("style.font_license is required for supplied fonts")
+        for path in (self.font_regular, self.font_bold):
+            if path is not None and re.match(r"^[a-z][a-z0-9+.-]*://", path, re.IGNORECASE):
+                raise ValueError("fonts must be local files; URLs are never fetched")
+        return self
+
+
+class ReelPacing(_Spec):
+    row_interval_s: float = Field(default=1.2, ge=0.6, le=3)
+    end_hold_s: float = Field(default=4, ge=2, le=10)
 
 
 class SourceCitation(_Spec):
@@ -295,6 +454,9 @@ class ReelSpec(_Spec):
     disclosure: str = Field(min_length=10, max_length=220)
     background: BackgroundSpec
     voiceover: VoiceoverSpec | None = None
+    music: MusicSpec | None = None
+    style: ReelStyle = Field(default_factory=ReelStyle)
+    pacing: ReelPacing | None = None
     provenance: Provenance = Field(default_factory=Provenance)
     accent_color: str | None = None
 
@@ -370,12 +532,18 @@ class ResolvedBackground(Strict):
     origin: BackgroundOrigin
     license: str
     attribution: str | None = None
+    crop_x: float = Field(default=0.5, ge=0, le=1)
+    crop_y: float = Field(default=0.5, ge=0, le=1)
 
 
 class ResolvedVoiceover(Strict):
     stored_path: str
     sha256: str
     duration_s: float = Field(gt=0)
+
+
+class ResolvedMusic(ResolvedVoiceover):
+    settings: MusicSpec
 
 
 class ReelTiming(Strict):
@@ -400,6 +568,8 @@ class ReelPlan(Strict):
     accent_color: str | None = None
     background: ResolvedBackground
     voiceover: ResolvedVoiceover | None = None
+    music: ResolvedMusic | None = None
+    style: ReelStyle = Field(default_factory=ReelStyle)
     provenance: Provenance
     calculation: CalculationRecord | None = None
     timing: ReelTiming

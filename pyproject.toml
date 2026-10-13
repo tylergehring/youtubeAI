@@ -18,11 +18,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+youtube = [
+    "google-auth-oauthlib>=1.2,<2",
+    "keyring>=25,<26",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
     "mypy>=1.10",
     "types-PyYAML",
+    "types-requests",
     "imageio-ffmpeg>=0.5",  # bundled ffmpeg binary so tests run without a system install
 ]
 
@@ -47,4 +52,3 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["core", "pipeline", "providers", "rendering"]
-

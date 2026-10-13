@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-from PIL import Image
+from PIL import Image, ImageFont
 from pydantic import ValidationError
 
 from core.config import IngestSettings, Settings
@@ -41,6 +41,8 @@ class PreparedReel:
     spec_name: str
     background: PreparedAsset
     voiceover: PreparedAsset | None
+    music: PreparedAsset | None = None
+    fonts: dict[str, PreparedAsset] = field(default_factory=dict)
 
 
 def format_validation_error(exc: ValidationError) -> str:
@@ -148,7 +150,33 @@ def prepare_reel(spec_path: Path, settings: Settings) -> PreparedReel:
             finance.max_asset_mb,
             settings.ingest,
         )
-    return PreparedReel(spec, data, sanitize_filename(spec_path.name), background, voiceover)
+    music = None
+    if spec.music:
+        music = _check_file(
+            _resolve(spec_dir, spec.music.path),
+            "Music",
+            finance.audio_extensions,
+            finance.max_asset_mb,
+            settings.ingest,
+        )
+    fonts: dict[str, PreparedAsset] = {}
+    for name, raw in (
+        ("font_regular", spec.style.font_regular),
+        ("font_bold", spec.style.font_bold),
+    ):
+        if raw is None:
+            continue
+        asset = _check_file(
+            _resolve(spec_dir, raw), name, [".ttf", ".otf", ".ttc"], 30, settings.ingest
+        )
+        try:
+            ImageFont.truetype(str(asset.path), 24)
+        except OSError as exc:
+            raise InvalidInputError(f"Cannot load {name}: {exc}") from exc
+        fonts[name] = asset
+    return PreparedReel(
+        spec, data, sanitize_filename(spec_path.name), background, voiceover, music, fonts
+    )
 
 
 def sha256_of(path: Path) -> str:

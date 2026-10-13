@@ -82,6 +82,8 @@ def _reel_source(reel: PreparedReel) -> ReelSource:
         ),
         background=entry(reel.background, "background", "Background"),
         voiceover=entry(reel.voiceover, "voiceover", "Voiceover") if reel.voiceover else None,
+        music=entry(reel.music, "music", "Music") if reel.music else None,
+        fonts={name: entry(asset, name, name) for name, asset in reel.fonts.items()},
     )
 
 
@@ -90,6 +92,9 @@ def _copy_reel(paths: JobPaths, reel: PreparedReel, source: ReelSource) -> None:
     pairs = [(reel.background, source.background)]
     if reel.voiceover and source.voiceover:
         pairs.append((reel.voiceover, source.voiceover))
+    if reel.music and source.music:
+        pairs.append((reel.music, source.music))
+    pairs.extend((asset, source.fonts[name]) for name, asset in reel.fonts.items())
     for asset, stored in pairs:
         target = paths.absolute(stored.stored_path)
         target.parent.mkdir(parents=True, exist_ok=True)

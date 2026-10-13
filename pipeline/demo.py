@@ -85,6 +85,10 @@ def _bokeh_frame(base: Image.Image, sprites: list[Image.Image], orbs: list[dict[
     return frame
 
 
+Palette = tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]
+DEFAULT_PALETTE: Palette = ((18, 30, 78), (108, 74, 138), (236, 138, 92))  # dusk
+
+
 def generate_demo_video(
     ffmpeg: FFmpeg,
     path: Path,
@@ -92,8 +96,11 @@ def generate_demo_video(
     height: int = 1920,
     seconds: int = 6,
     fps: int = 30,
+    palette: Palette = DEFAULT_PALETTE,
+    seed: int = 7,
 ) -> Path:
-    """An animated abstract backdrop: a dusk gradient with softly drifting light orbs.
+    """An animated abstract backdrop: a gradient (`palette`: top, middle, bottom colours) with
+    softly drifting light orbs.
 
     Generated here from seeded geometry, so it is reproducible and not pretending to be real
     footage. It loops seamlessly (every orb completes whole cycles per clip).
@@ -101,9 +108,9 @@ def generate_demo_video(
     work_w, work_h = max(2, width // 2), max(2, height // 2)  # soft content: draw small, scale up
     gradient = Image.linear_gradient("L").resize((work_w, work_h))
     base = ImageOps.colorize(
-        gradient, black=(18, 30, 78), mid=(108, 74, 138), white=(236, 138, 92), midpoint=140
+        gradient, black=palette[0], mid=palette[1], white=palette[2], midpoint=140
     ).convert("RGBA")
-    orbs = _orbs(16, seed=7)
+    orbs = _orbs(16, seed=seed)
     sprites = []
     for orb in orbs:
         radius = max(2, round(work_w * orb["r"]))

@@ -6,8 +6,10 @@ from core.config import Settings
 from core.finance import resolve_methodology, resolve_rows
 from core.jobs import JobPaths
 from core.models.finance import ReelLayout, ReelPlan, ReelSpec, Verification
+from core.models.manifest import JobManifest
 from core.models.media import CheckResult, RenderResult
 from core.reel_input import sha256_of
+from core.storage import read_model
 from rendering.ffmpeg import MediaInfo
 
 FPS_TOLERANCE = 0.5
@@ -61,12 +63,11 @@ def reel_checks(
             f"{media.fps} fps, expected {finance.fps}",
         )
 
-    # Narration is optional: only a reel that has a voiceover must carry audible audio.
-    if plan.voiceover is None:
+    if plan.voiceover is None and plan.music is None:
         add("audio_present", True, "text-only reel: narration not required", skipped=True)
         add("audio_not_silent", True, "text-only reel: narration not required", skipped=True)
     else:
-        add("audio_present", bool(media and media.has_audio), "voiceover supplied")
+        add("audio_present", bool(media and media.has_audio), "voiceover or music supplied")
         volume = media.mean_volume_db if media else None
         add(
             "audio_not_silent",
@@ -81,6 +82,36 @@ def reel_checks(
         background_ok,
         f"{plan.background.origin.value}: {plan.background.license}",
     )
+    if plan.music:
+        music = paths.absolute(plan.music.stored_path)
+        add(
+            "music_asset",
+            music.is_file()
+            and sha256_of(music) == plan.music.sha256
+            and plan.music.settings == spec.music,
+            plan.music.settings.license,
+        )
+    add("music_matches_spec", (plan.music is not None) == (spec.music is not None))
+    add(
+        "presentation_matches_spec",
+        plan.style.model_dump(exclude={"font_regular", "font_bold"})
+        == spec.style.model_dump(exclude={"font_regular", "font_bold"})
+        and plan.background.crop_x == spec.background.crop_x
+        and plan.background.crop_y == spec.background.crop_y,
+    )
+    if paths.manifest.is_file():
+        source = read_model(paths.manifest, JobManifest).input.reel
+        if source and source.fonts:
+            add(
+                "font_assets",
+                all(
+                    paths.absolute(font.stored_path).is_file()
+                    and sha256_of(paths.absolute(font.stored_path)) == font.sha256
+                    and getattr(plan.style, name) == font.stored_path
+                    for name, font in source.fonts.items()
+                ),
+                "Supplied fonts retained in the job with hashes and licence",
+            )
 
     expected_rows, expected_calc = resolve_rows(spec)
     consistent = (
@@ -106,6 +137,8 @@ def reel_checks(
     needed = {"title", "methodology", "cta", "disclosure"} | {
         f"row_{i + 1}" for i in range(len(plan.rows))
     }
+    if plan.style.eyebrow:
+        needed.add("eyebrow")
     missing = sorted(needed - names)
     add(
         "all_text_rendered",

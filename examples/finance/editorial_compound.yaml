@@ -1,0 +1,55 @@
+schema_version: 1
+template: finance_facts
+title: |-
+  What could
+  $10,000 become?
+
+figures:
+  kind: compound_growth
+  initial_amount: 10000
+  annual_return_pct: 7
+  compounding: annual
+  years: [5, 10, 15, 20, 30]
+
+cta: How long is your investing horizon?
+disclosure: >-
+  Hypothetical, not a forecast. Returns vary and can be negative.
+  Excludes taxes, fees and inflation. Not financial advice.
+
+style:
+  preset: editorial
+  eyebrow: THE COMPOUND EFFECT
+  title_align: left
+  row_format: rules
+  title_size: 92
+  row_size: 54
+  # Local .ttf/.otf/.ttc files are copied into the job, like the background.
+  # font_regular: path/to/Regular.ttf
+  # font_bold: path/to/Bold.ttf
+  # font_license: <your font licence>
+
+accent_color: "#9BE2C3"
+pacing:
+  row_interval_s: 1.2
+  end_hold_s: 4
+background:
+  # Run pipeline.demo once for this abstract clip, or replace with your licensed footage.
+  path: ../../workspace/demo/demo_background.mp4
+  origin: generated_placeholder
+  license: Generated locally by this project; no third-party footage
+  crop_x: 0.5
+  crop_y: 0.5
+
+# Supply your own music; no music or copyrighted footage is downloaded.
+# music:
+#   path: path/to/music.wav
+#   license: <your music licence>
+#   attribution: <credit required by its licence>
+#   start_s: 0
+#   gain_db: -12
+#   fade_in_s: 0.5
+#   fade_out_s: 1.5
+
+provenance:
+  verification: illustrative
+  notes: A constant 7% annual return is an assumption, not a historical statistic or forecast.
