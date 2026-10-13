@@ -347,7 +347,13 @@ python -m pipeline.reel --spec my_spec.yaml
 python -m pipeline.jobs create --format finance_facts --reel-spec my_spec.yaml
 python -m pipeline.run --job <job_id>
 python -m pipeline.preview --job <job_id>     # optional key frames + contact sheet
+python -m pipeline.preview --job <job_id> --vscode  # also creates a playback preview
 ```
+
+VS Code cannot play the original MP4's AAC audio. To review music in its built-in viewer,
+use `render/preview/vscode_preview.mp4` generated with `--vscode`. This copy preserves the
+video bitstream and converts audio to MP3; it does not alter the upload-ready final MP4.
+Alternatively, play the original in VLC or Windows Media Player.
 
 The finished video is `workspace/jobs/<job_id>/final/video.mp4`; the calculation and licence record
 is `final/provenance.json`. Invalid specs fail immediately with a message that names the field, so

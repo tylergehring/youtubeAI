@@ -71,7 +71,13 @@ python -m pipeline.reel --spec examples\finance\editorial_compound.yaml
 python -m pipeline.jobs create --format finance_facts --reel-spec examples\finance\retirement_withdrawal.yaml
 python -m pipeline.run --job JOB_ID           # finance -> render -> validate -> package
 python -m pipeline.preview --job JOB_ID       # key frames + contact sheet in render/preview/
+python -m pipeline.preview --job JOB_ID --vscode  # also write a playable VS Code preview
 ```
+
+VS Code's built-in video viewer cannot play AAC audio. The upload-ready `final/video.mp4`
+uses AAC and can be reviewed with VLC or Windows Media Player. With `--vscode`, open
+`render/preview/vscode_preview.mp4` instead: its video is copied unchanged and its audio
+is converted to MP3 for preview only. Upload the original, not this compatibility copy.
 
 The spec (JSON or YAML) is validated structured data; see
 [examples/finance/](examples/finance/) and "Finance reels" in [docs/pipeline.md](docs/pipeline.md)
@@ -134,9 +140,97 @@ Past timestamps and changes to an existing receipt's video/metadata/channel/sche
 
 Testing-mode Google OAuth refresh tokens for YouTube expire after seven days; production automation
 needs the appropriate production OAuth configuration. Upload quotas and channel limits also apply.
-This is a single-video uploader, not yet a quota-aware thousand-video publishing queue.
+Both single-video and batch upload commands stop on API errors; neither waits automatically
+for quota resets or bypasses channel upload limits.
 See [YouTube scheduling](https://developers.google.com/youtube/v3/docs/videos#status.publishAt)
 and [OAuth testing rules](https://support.google.com/cloud/answer/15549945).
+
+## Daily finance series
+
+[config/campaigns/finance_daily_100.yaml](config/campaigns/finance_daily_100.yaml) defines
+100 distinct calculated scenarios across ten finance families, with editorial text,
+randomized local backgrounds/music and one daily publication at 5 PM Pacific. These are
+clearly disclosed hypothetical calculations, not researched current financial statistics.
+Before creating a new batch, set its name, local media libraries, licence statements,
+start date and publishing timezone for your own channel.
+
+```powershell
+python -m pipeline.batch plan --campaign config\campaigns\finance_daily_100.yaml
+
+# Optional CPU limits for this shell; 0 (the default) leaves thread selection automatic.
+$env:VIDGEN__finance__encoder_threads = '4'
+$env:VIDGEN__finance__filter_threads = '2'
+python -m pipeline.batch run --batch finance_daily_100 --workers 2 --retry-failed
+python -m pipeline.batch status --batch finance_daily_100
+python -m pipeline.batch export --batch finance_daily_100
+
+# After reviewing the videos, calculated content and media rights:
+python -m pipeline.batch upload --batch finance_daily_100 `
+    --channel-id YOUR_CHANNEL_ID --made-for-kids no --approve --confirm-rights
+```
+
+Planning requires the exact requested number of unique scenarios. The seed makes media
+selection reproducible; each background/music pair is distinct, although individual clips
+and songs can repeat. Supply enough combinations for the requested count. The plan and
+specs are saved under `workspace/batches/finance_daily_100/`; rerunning planning with the
+same configuration reuses that calendar. Changed configuration requires a new batch name.
+Do not edit the generated specs or job snapshots to change an existing upload.
+
+An IANA timezone such as `America/Los_Angeles` keeps the local publication hour unchanged
+across daylight-saving transitions. `publish.csv` records every planned timestamp, selected
+asset, job state and verified YouTube link. `export` refreshes it during rendering; uploads
+refresh it after each accepted video and on failure.
+
+Batch upload checks that **all** videos have finished rendering and passed QA before sending
+the first one. It then uploads sequentially and verifies each remote schedule. On quota,
+network or channel errors it stops, retaining receipts and the completed calendar rows.
+Resolve the error and rerun the same upload command to resume safely without duplicates.
+No local process needs to run at publication time once YouTube accepts the schedule.
+
+## Original, evidence-backed Shorts
+
+The editorial workflow uses a video as a **research lead**, not a script to paraphrase.
+The first supported analytical format is fixed-coupon bond price risk:
+independent price calculations, original animated visuals, beginner-friendly narration,
+measured scene captions, evidence snapshots and a review gate. Graphics use minimal
+support text instead of repeating the spoken script; briefs enforce short scenes and copy.
+
+```powershell
+pip install -e ".[transcripts]"
+python -m pipeline.explainer intake `
+    --youtube "https://www.youtube.com/watch?v=5GRH9EeH-DQ" `
+    --out workspace\research\bond_risk_source
+
+# Read the transcript, check primary evidence, and review/edit the editorial brief first.
+# Uses OPENAI_API_KEY from .env; speech generation is billable.
+# Optional: add a user-supplied, licensed vertical video behind the graphics.
+python -m pipeline.explainer render `
+    --brief examples\explainers\bond_price_risk.yaml `
+    --research workspace\research\bond_risk_source `
+    --job-id bond_risk_background_demo_final `
+    --background-video C:\Users\tyler\Downloads\AiYoutube\video\16405360_1080_1920_25fps.mp4 `
+    --approve-evidence
+```
+
+Open `workspace/explainers/bond_risk_background_demo_final/final/video.mp4` in a desktop player,
+or `final/vscode_preview.mp4` inside VS Code. Output also includes captions, a contact
+sheet, narration receipts and publishing copy with source citations and AI-voice disclosure.
+The optional background is darkened, looped if necessary, hash-snapshotted in the job, and
+its audio is discarded; permission and any required attribution still need human confirmation.
+Nothing is uploaded, and these editorial drafts are deliberately separate from the existing
+batch uploader and its approval state machine.
+
+The demo takes a different angle from the source video's crisis predictions: **a bond can
+lose resale value without a default**. Its 4% and 5% yields are hypothetical, not current
+quotes. The primary-source excerpts and the independently written brief are in
+[examples/explainers/](examples/explainers/).
+
+An LLM/author still chooses the angle, reviews evidence and writes the structured brief.
+The software validates that brief and executes the math, graphics, speech and packaging.
+It does **not** automatically verify news, certify originality, or guarantee monetization.
+New economic topics need appropriate calculations and visuals, not just replacement nouns.
+Only original narration is sent to OpenAI; this workflow does not send the source transcript.
+Details and limitations: [pipeline documentation](docs/pipeline.md#evidence-backed-editorial-shorts).
 
 ## Development
 

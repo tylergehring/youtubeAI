@@ -29,6 +29,7 @@ from pipeline.run import run_pipeline
 from providers.registry import build_providers
 from rendering.ffmpeg import FFmpeg
 from rendering.reel_layout import FontSet, build_layout, prepare_background_image, wrap_text
+from rendering.reel_preview import playback_preview
 from tests.conftest import FFMPEG
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "finance" / "editorial_compound.yaml"
@@ -57,6 +58,38 @@ def tone(path: Path, hz: int = 220, seconds: float = 1) -> None:
     with wave.open(str(path), "wb") as output:
         output.setparams((1, 2, 44100, 0, "NONE", "not compressed"))
         output.writeframes(samples.tobytes())
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.skipif(not FFMPEG, reason="FFmpeg is required")
+@pytest.mark.parametrize("with_audio", [False, True])
+def test_vscode_playback_preserves_video_and_music(tmp_path: Path, with_audio: bool) -> None:
+    ffmpeg = FFmpeg.locate(FFMPEG)
+    source = tmp_path / "upload.mp4"
+    args = ["-y", "-f", "lavfi", "-i", "color=size=64x96:rate=30:duration=1"]
+    if with_audio:
+        args += ["-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "aac"]
+    ffmpeg.run_checked([*args, "-c:v", "libx264", str(source)])
+    original_bytes = source.read_bytes()
+    preview = playback_preview(ffmpeg, source, tmp_path / "preview" / "vscode_preview.mp4")
+    assert source.read_bytes() == original_bytes
+    info = ffmpeg.analyze(preview)
+    assert info.has_audio is with_audio
+    assert (info.width, info.height, info.fps) == (64, 96, 30)
+    assert info.duration_s == pytest.approx(1, abs=0.1)
+    if with_audio:
+        assert info.mean_volume_db is not None and info.mean_volume_db > -30
+        streams = ffmpeg.run(["-hide_banner", "-i", str(preview)]).stderr
+        assert "Audio: mp3" in streams
+    hashes = [
+        ffmpeg.run(
+            ["-v", "error", "-i", str(path), "-map", "0:v:0", "-c", "copy",
+             "-f", "hash", "-hash", "sha256", "-"]
+        ).stdout
+        for path in (source, preview)
+    ]
+    assert hashes[0].startswith("SHA256=") and hashes[0] == hashes[1]
+    assert not list(preview.parent.glob("*.partial.mp4"))
 
 
 @pytest.fixture

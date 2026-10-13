@@ -14,25 +14,30 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import logging
 import os
+import random
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 import yaml
+from filelock import FileLock
 
-from core.campaign import PlannedReel, expand, load_campaign
+from core.campaign import PlannedReel, Publishing, expand, load_campaign
 from core.config import Settings, load_settings
-from core.exceptions import InvalidInputError
+from core.exceptions import InvalidInputError, StageError
 from core.jobs import JobStore
 from core.logging import ROOT_LOGGER, configure_logging, redact
+from core.models.finance import ReelSpec
 from core.models.manifest import Audience, JobStatus
+from core.models.media import ValidationReport
 from core.publish import build_post
 from core.reel_input import prepare_reel
-from core.storage import write_json
+from core.storage import atomic_write_text, read_model, write_json
 from pipeline import artifacts
 from pipeline.backgrounds import choose_background, ensure_generated
 from pipeline.run import run_pipeline
@@ -45,6 +50,7 @@ FINISHED = {JobStatus.AWAITING_REVIEW, JobStatus.APPROVED, JobStatus.UPLOADED}
 CSV_COLUMNS = [
     "index", "job_id", "family", "status", "video", "duration_s", "title", "caption",
     "hashtags", "publish_at",
+    "background", "music", "youtube_url", "upload_state",
 ]  # fmt: skip
 
 
@@ -67,35 +73,70 @@ def write_plan(settings: Settings, campaign_text: str, count: int | None) -> tup
     """Expand a campaign into spec files plus plan.json. Returns (batch name, report lines)."""
     campaign = load_campaign(campaign_text)
     planned, report = expand(campaign, count=count)
-    if not planned:
+    wanted = count or campaign.count
+    if len(planned) != wanted:
         raise InvalidInputError(
-            "The campaign produced no valid videos.\n" + "\n".join(report.lines(0))
+            "Campaign cannot produce the exact requested number of unique videos.\n"
+            + "\n".join(report.lines(wanted))
         )
     directory = batch_dir(settings, campaign.name)
+    if (directory / PLAN_FILE).is_file():
+        previous = (directory / "campaign.yaml").read_text(encoding="utf-8")
+        plan = _load_plan(settings, campaign.name)
+        if previous != campaign_text or plan["requested"] != wanted:
+            raise InvalidInputError(
+                "This batch already exists. Use a new name; plans are immutable."
+            )
+        return campaign.name, [f"Reusing frozen plan with {len(plan['items'])} videos."]
+    tracks: list[Path] = []
+    if campaign.music:
+        library = Path(campaign.music.library)
+        if not library.is_dir():
+            raise InvalidInputError(f"Music library not found: {library}")
+        tracks = sorted(
+            p for p in library.iterdir()
+            if p.is_file() and p.suffix.lower() in settings.finance.audio_extensions
+        )
+        if not tracks:
+            raise InvalidInputError("No supported music files in the supplied library.")
     specs_dir = directory / "specs"
-    specs_dir.mkdir(parents=True, exist_ok=True)
-    for stale in specs_dir.glob("*.yaml"):
-        stale.unlink()
-
+    used_pairs: set[tuple[str, str]] = set()
     items: list[dict[str, Any]] = []
+    specs: list[tuple[str, str]] = []
     for reel in planned:
         reel.spec["background"] = choose_background(
-            reel.mood, reel.key, campaign.backgrounds, settings
+            reel.mood, f"{campaign.seed}:{reel.key}", campaign.backgrounds, settings
         )
+        if campaign.music:
+            background = reel.spec["background"]["path"]
+            available = [p for p in tracks if (background, str(p.resolve())) not in used_pairs]
+            if not available:
+                raise InvalidInputError(
+                    "Not enough music/background combinations for unique asset pairs."
+                )
+            rng = random.Random(f"{campaign.seed}:{reel.key}:music")
+            track = rng.choice(available)
+            used_pairs.add((background, str(track.resolve())))
+            reel.spec["music"] = {
+                **campaign.music.model_dump(exclude={"library"}),
+                "path": str(track.resolve()), "attribution": track.stem,
+            }
+        ReelSpec.model_validate(reel.spec)
         spec_file = f"{reel.index:04d}_{reel.key}.yaml"
-        (specs_dir / spec_file).write_text(
-            yaml.safe_dump(reel.spec, sort_keys=False, allow_unicode=True), encoding="utf-8"
-        )
+        specs.append((spec_file, yaml.safe_dump(reel.spec, sort_keys=False, allow_unicode=True)))
         items.append(_plan_item(reel, spec_file, campaign.publishing))
-    (directory / "campaign.yaml").write_text(campaign_text, encoding="utf-8")
+    for spec_file, text in specs:
+        atomic_write_text(specs_dir / spec_file, text)
+    atomic_write_text(directory / "campaign.yaml", campaign_text)
     write_json(
         directory / PLAN_FILE,
         {"name": campaign.name, "requested": count or campaign.count, "items": items},
     )
+    export_publish_csv(settings, campaign.name)
     return campaign.name, report.lines(count or campaign.count)
 
 
-def _plan_item(reel: PlannedReel, spec_file: str, publishing: Any) -> dict[str, Any]:
+def _plan_item(reel: PlannedReel, spec_file: str, publishing: Publishing) -> dict[str, Any]:
     post = build_post(reel.spec, reel.hashtags, publishing, reel.index)
     return {
         "index": reel.index,
@@ -108,6 +149,8 @@ def _plan_item(reel: PlannedReel, spec_file: str, publishing: Any) -> dict[str, 
         "caption": post.caption,
         "hashtags": post.hashtags,
         "publish_at": post.publish_at,
+        "background": reel.spec["background"]["path"],
+        "music": reel.spec.get("music", {}).get("path", ""),
     }
 
 
@@ -227,13 +270,19 @@ def export_publish_csv(settings: Settings, name: str) -> Path:
     plan = _load_plan(settings, name)
     store = JobStore(settings.workspace_dir)
     out = batch_dir(settings, name) / PUBLISH_FILE
-    with out.open("w", encoding="utf-8", newline="") as handle:
+    with io.StringIO(newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_COLUMNS)
         writer.writeheader()
         for item in plan["items"]:
             state = job_state(store, item["job_id"])
             video = artifacts.final_video(store.paths(item["job_id"])) if state else None
             ready = state in FINISHED and video is not None and video.is_file()
+            receipt_path = store.paths(item["job_id"]).root / "youtube_upload.json"
+            video_id, upload_state = "", ""
+            if receipt_path.is_file():
+                from core.youtube import UploadReceipt
+                receipt = read_model(receipt_path, UploadReceipt)
+                video_id, upload_state = receipt.video_id or "", receipt.state
             writer.writerow(
                 {
                     "index": item["index"],
@@ -246,8 +295,15 @@ def export_publish_csv(settings: Settings, name: str) -> Path:
                     "caption": item["caption"],
                     "hashtags": " ".join(f"#{t}" for t in item["hashtags"]),
                     "publish_at": item["publish_at"],
+                    "background": item.get("background", ""),
+                    "music": item.get("music", ""),
+                    "youtube_url": (
+                        f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
+                    ),
+                    "upload_state": upload_state,
                 }
             )
+        atomic_write_text(out, "\ufeff" + handle.getvalue())
     return out
 
 
@@ -314,6 +370,70 @@ def cmd_export(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def upload_batch(
+    settings: Settings, name: str, *, channel_id: str, made_for_kids: bool,
+    approve: bool, confirm_rights: bool,
+) -> int:
+    """Upload a frozen calendar; receipts resume safely and any API failure stops the batch."""
+    from core.youtube import Schedule, channel_identity
+    from core.youtube_auth import CredentialStore, GoogleTransport
+    from pipeline.youtube import upload_job
+
+    if not approve or not confirm_rights:
+        raise InvalidInputError("Batch uploading requires --approve and --confirm-rights.")
+    with FileLock(str(batch_dir(settings, name) / ".youtube.lock"), timeout=1):
+        plan = _load_plan(settings, name)
+        store = JobStore(settings.workspace_dir)
+        schedules: list[Schedule] = []
+        for item in plan["items"]:
+            schedules.append(Schedule(
+                publish_at=item["publish_at"], channel_id=channel_id,
+                made_for_kids=made_for_kids,
+            ))
+            paths = store.paths(item["job_id"])
+            if job_state(store, item["job_id"]) not in FINISHED:
+                raise InvalidInputError(f"{item['job_id']} is not ready; finish rendering first.")
+            report = read_model(artifacts.validation_json(paths), ValidationReport)
+            if not report.technical_passed or not artifacts.final_video(paths).is_file():
+                raise InvalidInputError(f"{item['job_id']} failed pre-upload QA.")
+            if not (paths.root / "youtube_upload.json").is_file():
+                schedules[-1].require_future()
+        secrets = CredentialStore()
+        http = GoogleTransport(secrets)
+        actual_id, title = channel_identity(http)
+        if actual_id != channel_id:
+            raise InvalidInputError(f"Authorized channel is {title} ({actual_id}), not the target.")
+        completed = 0
+        try:
+            for item, schedule in zip(plan["items"], schedules, strict=True):
+                result = upload_job(
+                    store, http, secrets, item["job_id"], schedule,
+                    approve=approve, confirm_rights=confirm_rights,
+                )
+                completed += 1
+                export_publish_csv(settings, name)
+                print(
+                    f"[{completed}/{len(schedules)}] verified {result.video_id}: "
+                    f"{item['publish_at']} | {item['title'].replace(chr(10), ' ')}",
+                    flush=True,
+                )
+        except StageError as exc:
+            print(f"Stopped after {completed} verified videos: {exc}", flush=True)
+            raise
+        finally:
+            export_publish_csv(settings, name)
+        return completed
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+    upload_batch(
+        _settings(args), args.batch, channel_id=args.channel_id,
+        made_for_kids=args.made_for_kids == "yes", approve=args.approve,
+        confirm_rights=args.confirm_rights,
+    )
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m pipeline.batch", description=__doc__)
     parser.add_argument("--workspace", type=Path, help="Override the workspace directory")
@@ -339,6 +459,13 @@ def build_parser() -> argparse.ArgumentParser:
     export = sub.add_parser("export", help="Write publish.csv for the batch")
     export.add_argument("--batch", required=True)
     export.set_defaults(func=cmd_export)
+    upload = sub.add_parser("upload", help="Approve and upload a frozen calendar to YouTube")
+    upload.add_argument("--batch", required=True)
+    upload.add_argument("--channel-id", required=True)
+    upload.add_argument("--made-for-kids", required=True, choices=["yes", "no"])
+    upload.add_argument("--approve", action="store_true")
+    upload.add_argument("--confirm-rights", action="store_true")
+    upload.set_defaults(func=cmd_upload)
     return parser
 
 

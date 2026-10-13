@@ -1,0 +1,19 @@
+Source: U.S. Treasury, TreasuryDirect
+Title: Understanding Pricing and Interest Rates
+URL: https://www.treasurydirect.gov/marketable-securities/understanding-pricing/
+Accessed: 2026-10-13
+Type: Reviewed excerpts from the Bonds and Notes section, not the complete page.
+
+Bonds are long-term securities that mature in 20 or 30 years.
+Notes are relatively short or medium-term securities that mature in 2, 3, 5, 7, or 10 years.
+Both bonds and notes pay interest every six months.
+The price for a bond or a note may be the face value (also called par value) or may be more or less than the face value. The price depends on the yield to maturity and the interest rate.
+If yield to maturity is greater than the interest rate, price is less than par value.
+If yield to maturity equals the interest rate, price equals par value.
+If yield to maturity is less than the interest rate, price is greater than par value.
+During the life of the bond or note, you earn interest at the set rate on the par value of the bond or note.
+If you still own the bond after 20 years or the note after seven years, you get back the face value of the security.
+
+Editorial limits: This page supports the fixed-coupon, yield/price and face-value mechanics.
+It does not verify the source video's current market numbers or predictions.
+The demo's 4% and 5% yields and $1,000 face value are hypothetical assumptions, not observations.

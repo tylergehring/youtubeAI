@@ -9,6 +9,8 @@ client_secret*.json
 oauth-client*.json
 youtube-token*.json
 workspace/batches/
+workspace/explainers/
+workspace/research/
 workspace/jobs/*
 workspace/output/*
 !workspace/jobs/.gitkeep

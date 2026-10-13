@@ -73,7 +73,8 @@ def build_filter_graph(
         index = offset + 2
         start = _fmt(block.start_s)
         chains.append(
-            f"[{index}:v]format=rgba,fade=t=in:st={start}:d={_fmt(fade)}:alpha=1[b{index}]"
+            f"[{index}:v]loop=loop=-1:size=1:start=0,setpts=N/({fps}*TB),"
+            f"format=rgba,fade=t=in:st={start}:d={_fmt(fade)}:alpha=1[b{index}]"
         )
         y = (
             f"{block.y}+{slide}*pow(1-min(1,max(0,(t-{start})/{_fmt(fade)})),2)"
@@ -223,7 +224,11 @@ class FfmpegReelRenderer(ReelRenderer):
         layout.scrim.save(scrim_path, "PNG")
         inputs: list[str] = []
         if is_video:
-            inputs += ["-stream_loop", "-1", "-t", duration, "-i", str(background)]
+            inputs += [
+                "-stream_loop", "-1", "-t", duration,
+                *(["-threads", str(finance.encoder_threads)] if finance.encoder_threads else []),
+                "-i", str(background),
+            ]
         else:
             cover = work / "background.png"
             prepare_background_image(
@@ -234,11 +239,11 @@ class FfmpegReelRenderer(ReelRenderer):
                 centering=(plan.background.crop_x, plan.background.crop_y),
             )
             inputs += ["-loop", "1", "-framerate", fps, "-t", duration, "-i", str(cover)]
-        inputs += ["-loop", "1", "-framerate", fps, "-t", duration, "-i", str(scrim_path)]
+        inputs += ["-threads", "1", "-framerate", fps, "-i", str(scrim_path)]
         for block in layout.blocks:
             path = work / f"{block.name}.png"
             block.image.save(path, "PNG")
-            inputs += ["-loop", "1", "-framerate", fps, "-t", duration, "-i", str(path)]
+            inputs += ["-threads", "1", "-framerate", fps, "-i", str(path)]
         if voiceover is not None:
             inputs += ["-i", str(voiceover)]
         if music is not None:
@@ -257,12 +262,15 @@ class FfmpegReelRenderer(ReelRenderer):
         request.out_path.parent.mkdir(parents=True, exist_ok=True)
         args = [
             "-y", "-hide_banner", "-nostats", "-loglevel", "error", *inputs,
+            *(["-filter_complex_threads", str(finance.filter_threads)]
+              if finance.filter_threads else []),
             "-filter_complex_script", str(script),
             "-map", "[v]", *(["-map", "[a]"] if has_audio else ["-an"]),
             "-t", duration, "-r", fps,
             "-c:v", "libx264", "-preset",
             "medium" if plan.style.preset == "editorial" else "veryfast",
             "-crf", "18" if plan.style.preset == "editorial" else "20", "-pix_fmt", "yuv420p",
+            *(["-threads", str(finance.encoder_threads)] if finance.encoder_threads else []),
             *(["-c:a", "aac", "-b:a", "192k", "-ar", "44100"] if has_audio else []),
             "-movflags", "+faststart",
             "-f", "mp4", str(partial),

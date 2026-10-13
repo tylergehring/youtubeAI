@@ -1,4 +1,4 @@
-"""Preview a finished reel without playing it: key frames plus one contact sheet."""
+"""Preview a finished reel with key frames, a contact sheet and optional playback."""
 
 from __future__ import annotations
 
@@ -11,6 +11,26 @@ from core.models.finance import ReelPlan
 from rendering.ffmpeg import FFmpeg
 
 SHEET_FRAME_HEIGHT = 640
+
+
+def playback_preview(ffmpeg: FFmpeg, video: Path, out: Path) -> Path:
+    """Copy video unchanged and encode MP3 audio for VS Code's AAC-limited player."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    temporary = out.with_suffix(".partial.mp4")
+    try:
+        ffmpeg.run_checked(
+            [
+                "-y", "-hide_banner", "-nostats", "-loglevel", "error",
+                "-i", str(video),
+                "-map", "0:v:0", "-map", "0:a:0?",
+                "-c:v", "copy", "-c:a", "libmp3lame", "-b:a", "192k",
+                "-movflags", "+faststart", str(temporary),
+            ]
+        )  # fmt: skip
+        temporary.replace(out)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return out
 
 
 def preview_times(plan: ReelPlan) -> list[float]:

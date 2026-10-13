@@ -203,7 +203,10 @@ is always discarded.
 `background.crop_x` and `crop_y` are 0..1 focal positions in the available crop range:
 0 = left/top, 0.5 = centred (default), 1 = right/bottom. They work for both images and video.
 The editorial preset encodes H.264 at CRF 18 / medium; classic keeps CRF 20 / veryfast.
-All audio outputs use AAC at 192 kbps, 44.1 kHz.
+Upload-ready audio uses AAC at 192 kbps, 44.1 kHz. VS Code's built-in viewer cannot play AAC:
+`python -m pipeline.preview --job JOB_ID --vscode` writes a separate
+`render/preview/vscode_preview.mp4` with MP3 audio and an unchanged video bitstream. The
+compatibility copy is for preview only, never used by the uploader.
 
 `final/publishing.json` is assembled from the actual resolved plan, not an LLM's recollection:
 title (under 100 characters), description containing the displayed figures and assumptions,
@@ -215,6 +218,34 @@ publishing draft, requires successful technical QA, explicit approval and confir
 and checks the authorized channel against a required channel ID. See the README's YouTube section.
 It stores a durable receipt and verifies YouTube's private future schedule before moving an
 approved job to `uploaded`; ambiguous failures retain the session/video ID for recovery.
+
+### Daily campaigns and batch publishing
+
+`python -m pipeline.batch plan --campaign config\campaigns\finance_daily_100.yaml`
+expands calculated scenarios into validated specs and a frozen `plan.json`. The campaign
+supports global `style`/`pacing`, per-family `eyebrow`, local background and music libraries,
+music gain/fades, and `publishing.timezone` (an IANA name). Background/music selection is
+seeded and uses distinct pairs; individual assets may repeat. Missing required libraries,
+insufficient pairs or fewer unique scenarios than requested are explicit planning errors.
+
+`publishing.start_date`, `posts_per_day: 1`, `first_post_hour: 17` and
+`timezone: America/Los_Angeles` produce one post per local calendar day at 5 PM, including
+the DST change. `tzdata` supplies timezone definitions on Windows. Without a timezone the
+legacy timezone-naive publishing sheet remains available, but YouTube requires offset-aware
+future timestamps.
+
+`python -m pipeline.batch run --batch NAME --workers 2 --retry-failed` resumes unfinished
+jobs, reuses successful artifacts and reports individual failures. `finance.encoder_threads`
+and `finance.filter_threads` can cap FFmpeg CPU usage; their default `0` preserves automatic
+thread selection. `status` groups jobs by state; `export` refreshes `publish.csv`.
+
+`python -m pipeline.batch upload --batch NAME --channel-id CHANNEL_ID --made-for-kids no
+--approve --confirm-rights` preflights every final video, QA report and schedule, then uploads
+sequentially using each job's resumable receipt. The publishing CSV updates after every
+verified schedule and on failure. API/quota errors stop the command; rerun it after resolving
+the error to resume, not to create replacement uploads. Existing receipts must be preserved.
+There is no automatic quota-reset wait or background task scheduler. Schedule verification
+does not certify processing completion, copyright clearance or eventual public availability.
 
 Reference review: [ShortFormGenerator](https://github.com/DrewStewart7/ShortFormGenerator)
 uses split-screen clip composition; [Neural Reels](https://github.com/double-k-3033/NR-AI-short-form-video-generator)
@@ -234,6 +265,86 @@ the existing wrapper, `RenderResult`, atomic partial-file writes) with Pillow fo
 a small `ReelRenderer` next to `Renderer` (`rendering/reel.py`). What carried over from the spike:
 restrained fade/slide reveals, a theme-token approach and per-beat timing.
 Content is data (the spec), not code.
+
+## Evidence-backed editorial Shorts
+
+`pipeline.explainer intake` uses the optional MIT-licensed `youtube-transcript-api` package
+to retrieve public captions. It accepts an explicit video ID or a standard HTTPS YouTube URL,
+records the caption language, generation flag, retrieval timestamp, canonical URL and content
+hash, and writes both typed timestamped JSON and plain text. The text can also be used as a
+local transcript in the existing explainer pipeline.
+
+This is an unofficial caption-access library, not the YouTube Data API. Availability can
+change. There is no proxy/cookie/access-control workaround, paid transcript-service fallback,
+or invented transcript on failure. Unavailable captions produce an explicit error. Intake
+refuses a nonempty destination; use a new research directory for a fresh capture. Public
+access does not grant rights to republish a creator's words, footage or audio.
+
+The author/LLM reads the captured material as research, separates assertions from predictions,
+checks primary sources, and creates an `ExplainerBrief`. The example
+`examples/explainers/bond_price_risk.yaml` contains:
+
+* an independent question, source interpretation, original contribution and excluded claims;
+* named evidence with URLs, access dates, support statements and hash-checked local excerpts;
+* explicit hypothetical assumptions and fixed-coupon bond calculation inputs;
+* scenes that reference evidence IDs and use validated calculation placeholders rather than
+  duplicating rounded numbers in their narration;
+* a clear hypothetical/educational disclosure.
+
+Explainer scenes are designed for finance beginners: narration is limited to 28 words per
+scene and 105 words total; headings are limited to 8 words, and supporting text to 7.
+The graphic is primary—the narration is spoken and captioned, not burned into each frame.
+OpenAI narration instructions and a 0.65-second frame-rounded scene hold favor a measured,
+conversational delivery over dense, fast explanations.
+
+`--approve-evidence` records an editorial decision, **not automated fact-checking**. Missing
+or altered snapshots, mismatched transcript/video identity, unknown references/placeholders,
+unlabeled hypotheticals and overflowing text stop before speech synthesis. A five-word
+phrase-overlap check flags obvious copying (over 10%); it does not measure conceptual
+originality, determine fair use or certify monetization. A low score is not a reason to publish.
+The six visual treatments explain different parts of a single argument rather than disguising
+the same generic content with randomly selected footage.
+
+`pipeline.explainer render` writes to `workspace/explainers/JOB_ID/`. This standalone editorial
+workspace is not registered in `pipeline.jobs` or accepted by the batch uploader. It preserves
+the brief, source transcript/provenance, evidence excerpts, calculation assumptions, speech
+receipts and final video hash. The optional `--background-video` input is fingerprinted and
+copied to `assets/background.mp4` with its hash and permission note in `background_asset.json`.
+The footage is scaled/cropped to portrait, softened and darkened behind a translucent graphics
+layer, and looped when shorter than the narration; its audio is never used. Existing jobs reject
+changed inputs; use a new job ID for a new brief, voice or background. Identical narration with
+an intact receipt/hash is reused, avoiding repeated speech calls during a render retry. Visual
+encoding is rerun.
+
+Only use background media with confirmed rights and retain any required attribution. A file
+hash verifies which bytes were rendered, not that the footage is licensed. The historical
+permission recorded for the user's local `AiYoutube` media library has not been independently
+audited.
+
+OpenAI narration defaults to `gpt-4o-mini-tts` / `marin`; `--model` and `--voice` can select
+compatible speech options. Only the independently written narration is sent. The final
+description discloses synthetic narration. Audio receipts record logical requests and input
+characters, **not an exact invoice or a zero-dollar estimate**. Check the provider's billing
+for actual charges.
+
+The first calculator uses semiannual fixed coupons and discounts each cash flow at a
+hypothetical yield. Price is valued on a coupon date with repayment assumed; fees, taxes,
+accrued interest and real market term structures are excluded. The comparison is an
+instantaneous repricing, not a total-return simulation. Maturity cash-flow diagrams are labeled
+schematic, and the yield/price curves are calculated, not traced from another creator's chart.
+
+Speech durations determine scene boundaries; each scene receives 0.65 seconds of hold
+(rounded up to a video frame). Captions show the full scene narration, not estimated word-level
+karaoke timing. A 30-65-second total-duration gate, actual decoded audio, frame rate,
+resolution and final duration are checked. H.264 visuals are original; final AAC narration is
+loudness-normalized to a -16 LUFS target with a -1.5 dBTP ceiling. A separate MP3-audio
+compatibility copy supports VS Code playback. Background footage is optional; this workflow
+does not add music.
+
+Final outputs include `video.mp4`, `vscode_preview.mp4`, `captions.srt`, `cover.png`,
+`contact_sheet.png`, `narration.json`, `publishing.json`, and `review_summary.json`.
+Listen to the actual narration, inspect charts and citations, and review claims before any
+publication. The workflow deliberately stops at `awaiting_review`.
 
 ### Validation checks (reels)
 

@@ -105,6 +105,8 @@ class FinanceSettings(_Cfg):
     width: int = Field(default=1080, ge=16)
     height: int = Field(default=1920, ge=16)
     fps: int = Field(default=30, ge=1, le=120)
+    encoder_threads: int = Field(default=0, ge=0, le=64)  # 0 retains FFmpeg's automatic choice
+    filter_threads: int = Field(default=0, ge=0, le=64)
     safe_margins: SafeMargins = Field(default_factory=SafeMargins)
     colors: FinanceColors = Field(default_factory=FinanceColors)
     timing: FinanceTiming = Field(default_factory=FinanceTiming)

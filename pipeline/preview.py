@@ -1,6 +1,6 @@
-"""Write preview frames and a contact sheet for a finished finance reel.
+"""Write preview frames, a contact sheet and optional VS Code playback for a finance reel.
 
-python -m pipeline.preview --job JOB_ID
+python -m pipeline.preview --job JOB_ID --vscode
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from core.storage import read_model
 from pipeline import artifacts
 from pipeline.stage import EXIT_OK, handle_errors
 from rendering.ffmpeg import FFmpeg
-from rendering.reel_preview import contact_sheet, extract_frames, preview_times
+from rendering.reel_preview import contact_sheet, extract_frames, playback_preview, preview_times
 
 
 def write_preview(settings: Settings, store: JobStore, job_id: str) -> tuple[list[Path], Path]:
@@ -42,6 +42,9 @@ def write_preview(settings: Settings, store: JobStore, job_id: str) -> tuple[lis
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m pipeline.preview", description=__doc__)
     parser.add_argument("--job", required=True)
+    parser.add_argument(
+        "--vscode", action="store_true", help="Also write a video with VS Code-compatible MP3 audio"
+    )
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--config-dir", type=Path)
     args = parser.parse_args(argv)
@@ -50,10 +53,18 @@ def main(argv: list[str] | None = None) -> int:
         settings = load_settings(args.config_dir)
         if args.workspace:
             settings = settings.model_copy(update={"workspace_dir": args.workspace.resolve()})
-        frames, sheet = write_preview(settings, JobStore(settings.workspace_dir), args.job)
+        store = JobStore(settings.workspace_dir)
+        frames, sheet = write_preview(settings, store, args.job)
         for frame in frames:
             print(frame)
         print(f"contact sheet: {sheet}")
+        if args.vscode:
+            video = playback_preview(
+                FFmpeg.locate(settings.ffmpeg_path),
+                artifacts.render_video(store.paths(args.job)),
+                sheet.parent / "vscode_preview.mp4",
+            )
+            print(f"VS Code playback preview (not for upload): {video}")
         return EXIT_OK
 
     return handle_errors(action)

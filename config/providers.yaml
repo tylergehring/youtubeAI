@@ -12,9 +12,12 @@ models:
   llm:
     mock: mock-llm-1
     openai: gpt-4.1-mini
+  tts:
+    openai: gpt-4o-mini-tts
 
 tts:
   voice: mock-voice-1
+  openai_voice: marin
 
 openai:
   timeout_s: 120

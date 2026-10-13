@@ -7,6 +7,7 @@ from pathlib import Path
 
 from core.campaign import Backgrounds
 from core.config import Settings
+from core.exceptions import InvalidInputError
 from core.reel_input import media_type_for
 from pipeline.demo import DEFAULT_PALETTE, Palette, generate_demo_video
 from rendering.ffmpeg import FFmpeg
@@ -50,11 +51,16 @@ def choose_background(
         clips = library_clips(Path(backgrounds.library), mood, settings)
         if clips:
             clip = clips[int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) % len(clips)]
-            return {
+            result = {
                 "path": str(clip.resolve()),
                 "origin": backgrounds.origin,
                 "license": backgrounds.license or "",
             }
+            if backgrounds.attribution:
+                result["attribution"] = backgrounds.attribution
+            return result
+    if backgrounds.require_library:
+        raise InvalidInputError(f"No supplied background clips found for mood {mood!r}.")
     return {
         "path": f"../backgrounds/{mood}.mp4",
         "origin": "generated_placeholder",

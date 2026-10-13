@@ -38,6 +38,17 @@ def _openai_llm(settings: Settings) -> LLMProvider:
     )
 
 
+def _openai_tts(settings: Settings) -> TTSProvider:
+    from providers.tts.openai_provider import OpenAITTSProvider
+    from rendering.ffmpeg import FFmpeg
+
+    return OpenAITTSProvider(
+        FFmpeg.locate(settings.ffmpeg_path),
+        model=settings.providers.model_for("tts"),
+        voice=settings.providers.tts.get("openai_voice", "marin"),
+    )
+
+
 # Register real providers here in later milestones: _FACTORIES["llm"]["openai"] = ...
 _FACTORIES: dict[str, dict[str, Callable[[Settings], Any]]] = {
     "llm": {
@@ -47,7 +58,8 @@ _FACTORIES: dict[str, dict[str, Callable[[Settings], Any]]] = {
     "tts": {
         "mock": lambda s: MockTTSProvider(
             voice=s.providers.tts.get("voice", "mock-voice-1"),
-        )
+        ),
+        "openai": _openai_tts,
     },
     "image": {"mock": lambda s: MockImageProvider()},
     "research": {

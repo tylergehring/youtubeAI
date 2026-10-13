@@ -1,0 +1,12 @@
+Source: U.S. Treasury, TreasuryDirect
+Title: Treasury Bonds
+URL: https://www.treasurydirect.gov/marketable-securities/treasury-bonds/
+Accessed: 2026-10-13
+Type: Reviewed excerpt from official Treasury product information.
+
+We sell Treasury Bonds for a term of either 20 or 30 years.
+Bonds pay a fixed rate of interest every six months until they mature.
+You can hold a bond until it matures or sell it before it matures.
+
+Editorial limits: Repayment and selling before maturity are different questions.
+This source does not promise a constant resale price or protection from inflation.

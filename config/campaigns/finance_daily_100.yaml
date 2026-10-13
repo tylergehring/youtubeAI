@@ -1,0 +1,173 @@
+# Hypothetical education: every amount is calculated locally, never an invented statistic.
+name: finance_daily_100
+count: 100
+seed: 20261014
+disclosure: "Hypothetical, not a forecast.\nReturns vary. Not financial advice."
+accent_colors: ["#E7BE6C", "#78D8CE", "#B7CFFF", "#D2D59A"]
+style:
+  preset: editorial
+  title_align: left
+  row_format: rules
+  title_size: 80
+  row_size: 46
+pacing:
+  row_interval_s: 1.5
+  end_hold_s: 4.5
+backgrounds:
+  library: 'C:\Users\tyler\Downloads\AiYoutube\video'
+  license: "User-confirmed copyright-free publishing permission"
+  attribution: "Background supplied by channel owner"
+  require_library: true
+music:
+  library: 'C:\Users\tyler\Downloads\AiYoutube\audio'
+  license: "User-confirmed copyright-free publishing permission"
+  gain_db: -6
+  fade_in_s: 0.6
+  fade_out_s: 1.5
+publishing:
+  start_date: 2026-10-14
+  posts_per_day: 1
+  first_post_hour: 17
+  timezone: America/Los_Angeles
+  common_hashtags: [FinancialEducation, MoneyMath, Shorts]
+families:
+  - id: lump_sum
+    kind: compound_growth
+    eyebrow: COMPOUND GROWTH
+    max_videos: 10
+    fixed:
+      annual_return_pct: 6
+      compounding: annual
+      years: [5, 10, 20, 30]
+    grid:
+      initial_amount: [1000, 2000, 3000, 5000, 7500, 10000, 15000, 20000, 30000, 50000]
+    titles: ["What could {initial_amount|money}\nbecome at 6%?"]
+    ctas: ["Notice how time changes the result."]
+    hashtags: [CompoundInterest]
+  - id: windfall
+    kind: compound_growth
+    eyebrow: A LUMP SUM OVER TIME
+    max_videos: 8
+    fixed:
+      initial_amount: 25000
+      compounding: annual
+      years: [5, 10, 15, 25]
+    grid:
+      annual_return_pct: [1, 2, 3, 4, 5, 6, 7, 8]
+    titles: ["$25,000 over time\nAt {annual_return_pct|pct}"]
+    ctas: ["These are scenarios, not predictions."]
+    hashtags: [LongTermSaving]
+  - id: monthly_saving
+    kind: contribution_growth
+    eyebrow: THE MONTHLY SAVING HABIT
+    max_videos: 12
+    fixed:
+      annual_return_pct: 6
+      contribution_frequency: monthly
+      contribution_timing: end
+      compounding: monthly
+      years: [5, 10, 20, 30]
+    grid:
+      contribution_amount: [50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000]
+    titles: ["{contribution_amount|money} a month\nAt an assumed 6%"]
+    ctas: ["Small recurring amounts add up."]
+    hashtags: [MonthlySaving]
+  - id: age_goal
+    kind: age_target
+    eyebrow: WHY STARTING AGE MATTERS
+    max_videos: 12
+    fixed:
+      target_age: 65
+      starting_ages: [25, 35, 45, 55]
+      contribution_frequency: monthly
+      contribution_timing: end
+      compounding: monthly
+    grid:
+      target_amount: [250000, 500000, 1000000]
+      annual_return_pct: [3, 4, 5, 6]
+    titles: ["Target {target_amount|money} by 65\nAt {annual_return_pct|pct}"]
+    ctas: ["Same goal. Different starting ages."]
+    hashtags: [SavingGoals]
+  - id: withdrawal
+    kind: withdrawal_rate
+    eyebrow: RETIREMENT INCOME MATH
+    max_videos: 10
+    fixed:
+      annual_incomes: [30000, 40000, 50000, 60000]
+    grid:
+      withdrawal_rate_pct: [2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4, 4.5]
+    titles: ["The {withdrawal_rate_pct|pct}\nwithdrawal calculation"]
+    ctas: ["A percentage alone does not measure risk."]
+    disclosure: "Illustrative withdrawal math, not a\nsafety guarantee. Not financial advice."
+    hashtags: [WithdrawalRate]
+  - id: home_loan
+    kind: loan_payment
+    eyebrow: HOME LOAN RATE COMPARISON
+    max_videos: 10
+    fixed:
+      term_years: 30
+      annual_rates_pct: [4, 5, 6, 7]
+    grid:
+      principal: [150000, 200000, 250000, 300000, 350000, 400000, 450000, 500000, 600000, 750000]
+    titles: ["A {principal|money} home loan\nWhat changes with rates?"]
+    ctas: ["Same balance. Different monthly payments."]
+    disclosure: "Illustrative fixed rates; principal\nand interest only. Taxes and fees excluded."
+    hashtags: [MortgageMath]
+  - id: car_loan
+    kind: loan_payment
+    eyebrow: AUTO LOAN RATE COMPARISON
+    max_videos: 8
+    fixed:
+      annual_rates_pct: [3, 5, 7, 9]
+    grid:
+      principal: [15000, 20000, 30000, 40000]
+      term_years: [4, 6]
+    titles: ["A {principal|money} auto loan\nOver {term_years} years"]
+    ctas: ["Monthly payment is only part of the cost."]
+    disclosure: "Illustrative fixed rates; principal\nand interest only. Fees excluded."
+    hashtags: [CarLoan]
+  - id: student_loan
+    kind: loan_payment
+    eyebrow: EDUCATION LOAN MATH
+    max_videos: 8
+    fixed:
+      annual_rates_pct: [3, 4, 5, 6]
+    grid:
+      principal: [10000, 25000, 50000, 75000]
+      term_years: [10, 20]
+    titles: ["A {principal|money} student loan\nOver {term_years} years"]
+    ctas: ["Rates and repayment years both matter."]
+    disclosure: "Illustrative fixed-rate repayment.\nNo subsidies, fees or forgiveness assumed."
+    hashtags: [StudentLoan]
+  - id: inflation
+    kind: inflation_erosion
+    eyebrow: PURCHASING POWER
+    max_videos: 12
+    fixed:
+      years: [5, 10, 15, 20]
+    grid:
+      amount: [10000, 50000, 100000]
+      inflation_rate_pct: [2, 3, 4, 5]
+    titles: ["What buys {amount|money} today?\nAt {inflation_rate_pct|pct} inflation"]
+    ctas: ["The dollars stay. Buying power changes."]
+    disclosure: "Illustrative constant inflation,\nnot a forecast. Cash earns no interest."
+    hashtags: [Inflation]
+  - id: doubling
+    kind: doubling_time
+    eyebrow: TIME TO DOUBLE
+    max_videos: 10
+    grid:
+      annual_returns_pct:
+        - [1, 2, 3, 4]
+        - [2, 3, 4, 5]
+        - [3, 4, 5, 6]
+        - [4, 5, 6, 7]
+        - [5, 6, 7, 8]
+        - [6, 7, 8, 9]
+        - [7, 8, 9, 10]
+        - [8, 9, 10, 11]
+        - [9, 10, 11, 12]
+        - [10, 11, 12, 13]
+    titles: ["How long to double?\n{annual_returns_pct|min|pct} to {annual_returns_pct|max|pct}"]
+    ctas: ["Growth rates change the wait dramatically."]
+    hashtags: [DoublingTime]

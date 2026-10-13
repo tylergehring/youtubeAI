@@ -54,14 +54,24 @@ the transitions in code. Per-stage detail lives in `manifest.stages`.
 
 Two statuses were added to your list: `generating_captions` and `packaging`.
 
+The newer evidence-backed editorial workflow is deliberately isolated under
+`workspace/explainers/<id>/`, outside the legacy job index and uploader. Its manifest
+records an input fingerprint, rendering/failure/review state and final media hash.
+`core/explainer.py` validates reviewed briefs and computes bond prices;
+`rendering/explainer.py` draws original animated charts; `pipeline/explainer.py` orchestrates
+evidence checks, cached narration, encoding and review packaging. It does not inherit the
+legacy mock research provider or auto-approve publication.
+
 ## Deviations from the original proposal
 
 * A second job format, `finance_facts` (text-first Reels), has its own stage list
   (`finance`, `render`, `validate`, `package`) defined in `core/models/manifest.py`; see
   "Finance reels" in [pipeline.md](pipeline.md). Reel jobs also keep `source/reel/` and `finance/`.
 * `timeline.py` lives in `rendering/` (not `pipeline/`) because both captions and render use it.
-* There is no YouTube provider, transcription provider or `transcribe` stage: you supply
-  transcripts. (YouTube upload in Milestone 10 is out of scope for now.)
+* The original source stages still take local transcripts. `pipeline.explainer intake` adds
+  explicit public-caption retrieval with `youtube-transcript-api`; it is not an audio
+  transcription stage. `pipeline.youtube` and `pipeline.batch upload` publish approved
+  finance reels separately.
 * `lesson.py` stage added; `notify.py`, real providers, web approval and upload are later
   milestones.
 * `docker-compose.yml` and `LICENSE` are not created yet.
@@ -69,10 +79,12 @@ Two statuses were added to your list: `generating_captions` and `packaging`.
 
 ## Security notes
 
-* No network access for sources: input is a topic plus local transcript files. Files are validated
+* Legacy source stages do not use the network: input is a topic plus local transcript files. Files are validated
   (extension, size, UTF-8, parseable, no duplicates), copied into the job and hashed
   (`core/ingest.py`); `acquire` re-checks the hash. `ingest.allowed_dirs` can restrict where files
   may be read from (the Jenkinsfile sets it). Reference URLs are only recorded, never fetched.
+  The explicit editorial intake command is separate: it retrieves public captions for a
+  validated YouTube ID, records provenance and fails on access restrictions without bypasses.
 * Job IDs are validated and manifest-relative paths cannot escape the job directory.
 * `subprocess` is only used with argument lists and `shell=False` (`rendering/ffmpeg.py`).
 * Logs are passed through a redaction filter (env-var secrets and common key patterns).

@@ -31,7 +31,8 @@ from pydantic import (
 )
 
 from core.exceptions import InvalidInputError
-from core.models.finance import ReelSpec
+from core.finance import resolve_methodology, resolve_rows
+from core.models.finance import ReelPacing, ReelSpec, ReelStyle
 from core.money import format_money_label, plain, to_decimal
 
 Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_]{0,39}$")]
@@ -66,6 +67,7 @@ class Family(_Model):
     hashtags: list[Hashtag] = Field(default_factory=list)
     weight: int = Field(default=1, ge=1, le=100)  # relative share of the final selection
     max_videos: int | None = Field(default=None, ge=1)  # cap on this family's videos
+    eyebrow: str | None = Field(default=None, min_length=1, max_length=40)
 
     @model_validator(mode="after")
     def _check(self) -> Family:
@@ -87,6 +89,8 @@ class Backgrounds(_Model):
     library: str | None = None  # folder; clips in <library>/<mood>/ or directly in <library>
     license: str | None = Field(default=None, min_length=1)  # the licence your library clips carry
     origin: Literal["user_supplied", "licensed_project_asset"] = "user_supplied"
+    require_library: bool = False
+    attribution: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def _library_needs_license(self) -> Backgrounds:
@@ -101,6 +105,15 @@ class Publishing(_Model):
     first_post_hour: int = Field(default=9, ge=0, le=23)
     common_hashtags: list[Hashtag] = Field(default_factory=lambda: ["shorts", "personalfinance"])
     max_hashtags: int = Field(default=6, ge=0, le=30)
+    timezone: str | None = None
+
+
+class MusicLibrary(_Model):
+    library: str
+    license: str = Field(min_length=1, max_length=300)
+    gain_db: float = Field(default=-12, ge=-40, le=0)
+    fade_in_s: float = Field(default=0.5, gt=0, le=5)
+    fade_out_s: float = Field(default=1.5, gt=0, le=5)
 
 
 class Campaign(_Model):
@@ -116,6 +129,9 @@ class Campaign(_Model):
     backgrounds: Backgrounds = Field(default_factory=Backgrounds)
     publishing: Publishing = Field(default_factory=Publishing)
     families: list[Family] = Field(min_length=1)
+    style: ReelStyle = Field(default_factory=ReelStyle)
+    pacing: ReelPacing | None = None
+    music: MusicLibrary | None = None
 
     @model_validator(mode="after")
     def _unique_ids(self) -> Campaign:
@@ -264,7 +280,13 @@ def _candidates(campaign: Campaign, family: Family, report: ExpansionReport) -> 
             "cta": render_template(_pick(family.ctas, key, "cta"), values),
             "disclosure": family.disclosure or campaign.disclosure,
             "background": _DUMMY_BACKGROUND,
+            "style": {
+                **campaign.style.model_dump(exclude_none=True),
+                **({"eyebrow": family.eyebrow} if family.eyebrow else {}),
+            },
         }
+        if campaign.pacing:
+            spec["pacing"] = campaign.pacing.model_dump()
         if campaign.accent_colors:
             spec["accent_color"] = _pick(campaign.accent_colors, key, "accent")
         titles: list[str] = []
@@ -312,6 +334,7 @@ def expand(
 
     cursors = dict.fromkeys(pools, 0)
     used_titles: set[str] = set()
+    used_facts: set[str] = set()
     planned: list[PlannedReel] = []
     while len(planned) < wanted:
         progressed = False
@@ -326,6 +349,15 @@ def expand(
                     if title is None:
                         report.title_collisions += 1
                         continue
+                    parsed = ReelSpec.model_validate(candidate.spec)
+                    rows, _ = resolve_rows(parsed)
+                    facts = _stable_hash(
+                        resolve_methodology(parsed), [row.model_dump() for row in rows]
+                    )
+                    if facts in used_facts:
+                        report.duplicates += 1
+                        continue
+                    used_facts.add(facts)
                     used_titles.add(title)
                     planned.append(
                         PlannedReel(

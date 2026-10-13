@@ -1,0 +1,85 @@
+title: "Can a bond lose value without missing payments?"
+question: "Why could a bond sell for less even while its promised payments continue?"
+source_video_id: 5GRH9EeH-DQ
+source_interpretation: >-
+  Bravos Research's video, America is About to Trigger a Global Financial Reset,
+  discusses bond-market stress and makes predictions about government policy and
+  the dollar. Its opening frames higher yields as a crisis signal. This is a research
+  lead, not evidence that those predictions are true. We isolate the narrower question
+  of price sensitivity and explain it without adopting the video's thesis or narrative.
+original_contribution: >-
+  A plain-language explanation and reproducible price comparison: show how the same
+  change in interest rates affects a bond with two years left differently from one with
+  thirty years left, then distinguish a lower resale price from missed payments.
+  All charts are generated from our own calculations. No source footage, audio,
+  thumbnails, script passages or historical/current yield claims are reused.
+excluded_claims:
+  - "The source's current 2-year, 10-year and 30-year yield figures were not independently verified and are not repeated."
+  - "Claims that the bond market is breaking or a financial reset is imminent are not treated as established facts."
+  - "Predictions about future currency debasement, policy decisions and investment performance are excluded."
+  - "No claim is made that individual bonds and bond funds have identical maturity or price-risk behavior."
+evidence:
+  - id: treasury_pricing
+    title: "TreasuryDirect: Understanding Pricing and Interest Rates"
+    url: https://www.treasurydirect.gov/marketable-securities/understanding-pricing/
+    accessed_on: 2026-10-13
+    supports: >-
+      Notes and bonds have fixed semiannual coupons. Their price depends on yield;
+      a yield above the coupon rate produces a below-par price. Face value is returned
+      at maturity. The 4-to-5-percent experiment is a calculation, not a market quote.
+    snapshot: evidence/treasury_pricing.txt
+    snapshot_sha256: 9a7ca02981d2fecd600df03cc543f5d23b6905f3345f290808c61c0d2fa45570
+  - id: treasury_bonds
+    title: "TreasuryDirect: Treasury Bonds"
+    url: https://www.treasurydirect.gov/marketable-securities/treasury-bonds/
+    accessed_on: 2026-10-13
+    supports: >-
+      Treasury bonds pay fixed interest every six months and can be held to maturity
+      or sold beforehand. A constant coupon is not a constant resale price.
+    snapshot: evidence/treasury_bonds.txt
+    snapshot_sha256: ddee5939e30bb6c660d55502447358a177b25f93fe9ae869a13ea644f34e3d5a
+scenario:
+  face_value: 1000
+  coupon_pct: 4
+  initial_yield_pct: 4
+  changed_yield_pct: 5
+  short_years: 2
+  long_years: 30
+scenes:
+  - heading: "Paid in full.\nStill worth less?"
+    narration: >-
+      This bond promises to repay {face}. But sell it early, and you might get less.
+    visual: hook
+    supporting_text: "A 30-year bond, sold today."
+    evidence_ids: [treasury_pricing, treasury_bonds]
+  - heading: "Why pay less?"
+    narration: >-
+      It still pays {coupon_payment} every six months. But newer bonds may offer more,
+      so buyers may pay less for yours.
+    visual: yield
+    supporting_text: "Same $20 check."
+    evidence_ids: [treasury_pricing]
+  - heading: "How much less?"
+    narration: >-
+      With {short_years} years left: about {short_price}. With {long_years}: about
+      {long_price}. Longer bonds usually move more.
+    visual: comparison
+    supporting_text: "Same rate change. Different price."
+    evidence_ids: [treasury_pricing]
+  - heading: "Keep it—or sell early?"
+    narration: >-
+      Hold an individual bond to its end, and you expect {face} back—if payments are
+      made. Sell early, and today's price matters.
+    visual: cashflows
+    supporting_text: "Assuming repayment."
+    evidence_ids: [treasury_pricing, treasury_bonds]
+  - heading: "Price drop ≠ missed payment"
+    narration: >-
+      A lower price doesn't mean payments stopped. It means buyers might pay less for
+      the bond.
+    visual: takeaway
+    supporting_text: "A different kind of risk."
+    evidence_ids: [treasury_pricing, treasury_bonds]
+disclosure: >-
+  Hypothetical yields, not current market data. Semiannual fixed coupons; no fees,
+  taxes or accrued interest. Repayment assumed. Educational, not financial advice.

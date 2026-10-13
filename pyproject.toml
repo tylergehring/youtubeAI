@@ -15,9 +15,13 @@ dependencies = [
     "python-dotenv>=1.0",
     "openai>=1.40",
     "pillow>=10.1",
+    "tzdata>=2025.2",  # IANA time zones for daily scheduling on Windows
 ]
 
 [project.optional-dependencies]
+transcripts = [
+    "youtube-transcript-api>=1.2,<2",
+]
 youtube = [
     "google-auth-oauthlib>=1.2,<2",
     "keyring>=25,<26",

@@ -2,8 +2,9 @@
 
 Interfaces live in `core/providers.py`; implementations in `providers/<kind>/`.
 
-Source material is never fetched by a provider: transcripts are supplied by the user (see
-`core/ingest.py`), so there are no YouTube or transcription providers.
+The original stage pipeline takes local transcripts through `core/ingest.py`. An explicit
+`pipeline.explainer intake` command can now retrieve public YouTube captions through
+`youtube-transcript-api`; it does not download or transcribe source audio.
 
 | Interface | Methods | Mock |
 |---|---|---|
@@ -35,6 +36,24 @@ python -m pipeline.check_provider --llm openai --live-call   # one tiny billable
   the SDK (`openai.max_retries`).
 * Reasoning-style models (`o*`, `gpt-5*`, `gpt-6*`) get no `temperature` parameter; override with
   `openai.send_temperature`.
+
+## OpenAI speech
+
+`providers/tts/openai_provider.py` implements real narration with the existing `TTSProvider`
+contract. It requires `OPENAI_API_KEY`, writes WAV atomically, measures the decoded duration
+and audio level with FFmpeg, and fails explicitly rather than returning mock audio.
+The editorial command uses it directly. The existing stage pipeline can opt in with:
+
+```powershell
+$env:VIDGEN__providers__selected__tts = "openai"
+```
+
+`providers.models.tts.openai` selects the speech model and `providers.tts.openai_voice`
+selects the voice (defaults `gpt-4o-mini-tts` and `marin`). Mock defaults remain unchanged.
+Characters and logical requests are returned as usage. Token-based speech billing is not
+inferred from character count; no speech price is configured by default. A cost record
+marked `no pricing configured` is not evidence that speech was free. Editorial audio receipts
+retain usage independently of the original pipeline's cost tracker.
 
 ## Rules for implementers
 

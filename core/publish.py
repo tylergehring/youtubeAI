@@ -9,8 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from core.campaign import Publishing
+from core.exceptions import InvalidInputError
 from core.finance import resolve_methodology
 from core.models.finance import ReelSpec
 
@@ -40,7 +42,14 @@ def publish_time(index: int, publishing: Publishing) -> str:
     day, slot = divmod(index - 1, publishing.posts_per_day)
     spacing = max(1, 12 // publishing.posts_per_day)
     start = datetime.combine(publishing.start_date, time(publishing.first_post_hour))
-    return (start + timedelta(days=day, hours=slot * spacing)).strftime("%Y-%m-%dT%H:%M")
+    moment = start + timedelta(days=day, hours=slot * spacing)
+    if publishing.timezone:
+        try:
+            zone = ZoneInfo(publishing.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise InvalidInputError(f"Unknown publishing time zone: {publishing.timezone}") from exc
+        return moment.replace(tzinfo=zone).isoformat(timespec="minutes")
+    return moment.strftime("%Y-%m-%dT%H:%M")
 
 
 def build_post(
