@@ -34,7 +34,7 @@ from rendering.explainer import SCENE_HOLD_SECONDS, ExplainerGraphics, render_sc
 from rendering.ffmpeg import FFmpeg
 from rendering.reel_preview import contact_sheet, playback_preview
 
-VERSION = 5
+VERSION = 6
 
 
 @contextmanager

@@ -1,14 +1,14 @@
 # Automated Video Generator
 
-A job-based pipeline that turns a **topic plus transcripts you supply** into an original
-educational explainer video, with a human review step before anything is published.
+A provider-configurable pipeline for educational finance videos, deterministic reels, and
+source-led editorial Shorts. Locally supplied transcripts continue to work through the job
+pipeline; a separate editorial workflow can retrieve public YouTube captions, draft three
+original-topic candidates, and render reviewed short-form video drafts.
 
-The tool never talks to YouTube (or any site) to get source material. You paste or save the
-transcripts of videos you want to learn from as `.txt`, `.srt` or `.vtt` files and pass them in;
-the pipeline treats them as research input, builds its own lesson and writes an original script.
-
-**Status: Milestone 1 - fake end-to-end pipeline.** Every stage runs with mock providers
-(no AI APIs, no network, no cost). This proves the architecture before real providers are added.
+External services are workflow-specific: mock providers remain the default for the standard job
+pipeline; editorial authoring requires explicit AI-usage approval; YouTube publishing is a
+separate command with explicit evidence, rights, audience, channel, and future-schedule gates.
+Generated claims are not automatically fact-checked.
 
 ## Quick start
 
@@ -207,18 +207,19 @@ python -m pipeline.explainer intake `
 python -m pipeline.explainer render `
     --brief examples\explainers\bond_price_risk.yaml `
     --research workspace\research\bond_risk_source `
-    --job-id bond_risk_background_demo_final `
+    --job-id bond_risk_opening_reveal `
     --background-video C:\Users\tyler\Downloads\AiYoutube\video\16405360_1080_1920_25fps.mp4 `
     --approve-evidence
 ```
 
-Open `workspace/explainers/bond_risk_background_demo_final/final/video.mp4` in a desktop player,
+Open `workspace/explainers/bond_risk_opening_reveal/final/video.mp4` in a desktop player,
 or `final/vscode_preview.mp4` inside VS Code. Output also includes captions, a contact
 sheet, narration receipts and publishing copy with source citations and AI-voice disclosure.
 The optional background is darkened, looped if necessary, hash-snapshotted in the job, and
 its audio is discarded; permission and any required attribution still need human confirmation.
-Nothing is uploaded, and these editorial drafts are deliberately separate from the existing
-batch uploader and its approval state machine.
+Nothing is uploaded by the rendering command. This explainer workspace is separate from
+`pipeline.jobs`; the source-led topic workflow has its own explicit `upload-editorial` command
+and cannot schedule anything during generation or rendering.
 
 The demo takes a different angle from the source video's crisis predictions: **a bond can
 lose resale value without a default**. Its 4% and 5% yields are hypothetical, not current
@@ -231,6 +232,66 @@ It does **not** automatically verify news, certify originality, or guarantee mon
 New economic topics need appropriate calculations and visuals, not just replacement nouns.
 Only original narration is sent to OpenAI; this workflow does not send the source transcript.
 Details and limitations: [pipeline documentation](docs/pipeline.md#evidence-backed-editorial-shorts).
+
+## Source-led multi-topic drafts
+
+This workflow takes a public YouTube source as a research lead, fetches available captions,
+and asks the configured real LLM for three distinct topics, scripts and visual plans. It does
+not copy source footage/audio, search for evidence, or automatically verify financial claims.
+The transcript is sent to the configured LLM during authoring; only original narration text is
+sent to TTS. Confirm service selection and pricing before each billable step.
+
+```powershell
+pip install -e ".[transcripts]"
+python -m pipeline.editorial `
+    --youtube "https://www.youtube.com/watch?v=5GRH9EeH-DQ" `
+    --batch-id bond_source_topics `
+    --approve-ai-usage
+
+# After reviewing the three scripts/visual plans, render one topic at a time.
+python -m pipeline.editorial `
+    --batch-id bond_source_topics `
+    --topic topic-1 `
+    --approve-ai-usage `
+    --background-video "C:\path\to\licensed-background.mp4" `
+    --background-license "State the verified permission or licence"
+```
+
+Configure a real LLM and TTS provider first. A successful authoring batch makes seven structured
+LLM requests (one topic shortlist, three scripts, three visual plans); narration uses one TTS
+request per script scene. The visual plan is rendered deterministically with Pillow/FFmpeg—no
+image-generation provider is used. The cost ledger records configured estimates, not an invoice.
+Drafts, hashed assets, captions, previews, technical QA and publishing metadata are stored under
+`workspace/editorial_batches/<batch-id>/<topic-id>/`. The renderer centers rectangle labels inside
+their boxes and uses a translucent graphics layer over supplied backgrounds. Keep each rectangle
+within the frame's safe margin. Supplying background/music requires an explicit permission/licence
+note; asset hashes identify bytes but do not establish ownership.
+
+Every render stops at `awaiting_review`. Inspect the encoded video and listen to the narration,
+independently verify every financial claim against appropriate evidence, review originality and
+rights, and edit `final/publishing.json` to add verified citations as needed. The five-word
+overlap check is only a copying heuristic, not legal clearance or a monetization guarantee.
+
+Only after review, one topic can be scheduled through the existing resumable YouTube protocol:
+
+```powershell
+python -m pipeline.youtube upload-editorial `
+    --batch-id bond_source_topics `
+    --topic topic-1 `
+    --channel-id UC_REPLACE_WITH_YOUR_CHANNEL_ID `
+    --publish-at "REPLACE_WITH_FUTURE_ISO_8601_TIME_AND_OFFSET" `
+    --made-for-kids no `
+    --contains-synthetic-media yes `
+    --approve `
+    --evidence-reviewed `
+    --confirm-rights
+```
+
+Choose the audience and synthetic-media declarations according to the content and current
+YouTube requirements; the tool does not decide them. Scheduling is one video per explicit
+command. YouTube acceptance is verified by channel, privacy and future schedule, but does not
+guarantee processing, publication, rights clearance or monetization. No live service calls or
+uploads are performed just by creating or rendering a draft.
 
 ## Development
 

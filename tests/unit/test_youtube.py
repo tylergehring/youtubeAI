@@ -10,8 +10,10 @@ import pytest
 from pydantic import ValidationError
 
 from core.exceptions import InvalidInputError, StageError
+from core.hashing import file_sha256
+from core.models.media import CheckResult, ValidationReport
 from core.reel_metadata import ReelMetadata
-from core.storage import read_model, write_model
+from core.storage import read_json, read_model, write_json, write_model
 from core.youtube import (
     API,
     UPLOAD_API,
@@ -21,6 +23,7 @@ from core.youtube import (
     request_body,
     upload_scheduled,
 )
+from pipeline.youtube import upload_editorial_topic
 
 CHANNEL = "UC" + "a" * 22
 OTHER_CHANNEL = "UC" + "b" * 22
@@ -162,6 +165,86 @@ def test_body_is_private_and_explicit(schedule: Schedule) -> None:
         "selfDeclaredMadeForKids": False,
         "containsSyntheticMedia": False,
     }
+
+
+def test_editorial_upload_requires_review_and_persists_approval(
+    tmp_path: Path, schedule: Schedule
+) -> None:
+    workspace = tmp_path
+    batch_dir = workspace / "editorial_batches" / "sample_batch"
+    topic_dir = batch_dir / "topic-1"
+    final_dir = topic_dir / "final"
+    final_dir.mkdir(parents=True)
+    video = final_dir / "video.mp4"
+    video.write_bytes(b"reviewed-editorial-video")
+    metadata_path = final_dir / "publishing.json"
+    write_model(
+        metadata_path,
+        ReelMetadata(
+            title="A beginner bond question",
+            description="Educational explanation.",
+            hashtags=["FinancialEducation", "Shorts"],
+        ),
+    )
+    write_json(
+        topic_dir / "render_manifest.json",
+        {
+            "status": "awaiting_review",
+            "video_path": "final/video.mp4",
+            "video_sha256": file_sha256(video),
+        },
+    )
+    write_model(
+        topic_dir / "validation.json",
+        ValidationReport(
+            technical_passed=True,
+            checks=[CheckResult(name="video_opens", passed=True)],
+        ),
+    )
+    write_json(
+        final_dir / "review_summary.json",
+        {
+            "status": "awaiting_review",
+            "evidence_review_required": True,
+            "human_review_required": True,
+        },
+    )
+    write_json(
+        batch_dir / "plan.json",
+        {"topics": [{"topic_id": "topic-1", "status": "video_draft_ready"}]},
+    )
+    http, secrets = FakeGoogle(schedule), MemorySecrets()
+
+    with pytest.raises(InvalidInputError, match="--evidence-reviewed"):
+        upload_editorial_topic(
+            workspace,
+            "sample_batch",
+            "topic-1",
+            http,
+            secrets,
+            schedule,
+            approve=True,
+            evidence_reviewed=False,
+            confirm_rights=True,
+        )
+    assert http.inserts == 0
+
+    receipt = upload_editorial_topic(
+        workspace,
+        "sample_batch",
+        "topic-1",
+        http,
+        secrets,
+        schedule,
+        approve=True,
+        evidence_reviewed=True,
+        confirm_rights=True,
+    )
+
+    assert receipt.state == "verified"
+    assert receipt.video_id == VIDEO_ID
+    assert read_json(topic_dir / "publishing_approval.json")["evidence_reviewed"] is True
+    assert read_json(batch_dir / "plan.json")["topics"][0]["status"] == "scheduled"
 
 
 def test_upload_verified_and_repeat_never_duplicates(inputs: dict[str, Any]) -> None:

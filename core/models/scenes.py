@@ -254,6 +254,11 @@ Animation = Annotated[
     Field(discriminator="type"),
 ]
 
+SupportedAnimation = Annotated[
+    FadeIn | FadeOut | Move | Scale | Draw | Highlight | Pulse | TypeText,
+    Field(discriminator="type"),
+]
+
 
 # ---------------------------------------------------------------- scenes
 

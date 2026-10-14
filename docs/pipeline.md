@@ -304,6 +304,9 @@ phrase-overlap check flags obvious copying (over 10%); it does not measure conce
 originality, determine fair use or certify monetization. A low score is not a reason to publish.
 The six visual treatments explain different parts of a single argument rather than disguising
 the same generic content with randomly selected footage.
+For the bond-risk hook, the face-value amount appears first; the hypothetical resale amount
+and arrow then animate into view during the opening seconds, giving the question a visual
+answer before the rate comparison explains why.
 
 `pipeline.explainer render` writes to `workspace/explainers/JOB_ID/`. This standalone editorial
 workspace is not registered in `pipeline.jobs` or accepted by the batch uploader. It preserves
@@ -359,3 +362,84 @@ Licence text is recorded, not legally verified; a passing asset/hash check does 
 Single background, single column of up to 12 rows; no per-word captions; fonts depend on the
 machine unless pinned; Jenkinsfile still targets the explainer only. Safe margins are a template,
 not a guarantee against every platform's UI: review in the intended app before publication.
+
+## Source-led multi-topic editorial workflow
+
+`pipeline.editorial` is a separate path for turning one public YouTube source into three
+beginner-oriented topic drafts. Install the optional caption client and configure a real LLM:
+
+```powershell
+pip install -e ".[transcripts]"
+python -m pipeline.editorial `
+    --youtube "https://www.youtube.com/watch?v=5GRH9EeH-DQ" `
+    --batch-id bond_source_topics `
+    --approve-ai-usage
+```
+
+Caption retrieval fails explicitly when unavailable; there is no proxy, cookie, or invented-text
+fallback. The authoring step makes seven structured LLM requests: one shortlist over the full
+transcript, one script for each of three candidates using only its selected transcript segments,
+and one visual plan per script. The transcript is untrusted research input, not proof, a licence,
+or a source to paraphrase. The author must independently verify the claims; this software does
+not fetch primary evidence or perform autonomous fact-checking.
+
+Each topic draft lives in
+`workspace/editorial_batches/<batch-id>/<topic-id>/`. It has typed `topic.json`, `script.json`,
+`visual_plan.json` and `source_overlap.json` files. The script is limited to 105 spoken words,
+each scene to 28 words, and support copy to seven words per item. The five-word overlap threshold
+is a narrow heuristic, not proof of originality, fair use, or monetization eligibility.
+
+Render one topic after inspecting its proposed script and visual plan:
+
+```powershell
+python -m pipeline.editorial `
+    --batch-id bond_source_topics `
+    --topic topic-1 `
+    --approve-ai-usage `
+    --background-video "C:\path\to\licensed-background.mp4" `
+    --background-license "State the verified permission or licence" `
+    --music "C:\path\to\licensed-music.wav" `
+    --music-license "State the verified permission or licence"
+```
+
+The configured TTS provider receives only original scene narration; speech is one request per
+scene and requires a separate explicit `--approve-ai-usage`. An intact hash-checked narration
+cache is reused on retries; an incomplete receipt blocks a possible repeat charge for
+reconciliation. Pillow/FFmpeg render the validated object plan as original text, shape, chart,
+timeline and diagram graphics. This is code-based drawing, not generated image/video footage.
+Optional background and music are copied into the topic folder with hashes and supplied licence
+notes; background audio is discarded. Audio is mixed under narration when present.
+
+Measured speech durations determine scene timing, holds and full-scene SRT captions. The renderer
+requires a 30-65-second 9:16 video and checks encoded duration, resolution, frame rate, audible
+audio, captions, preview and cover/contact-sheet artifacts. Outputs include `final/video.mp4`,
+`final/vscode_preview.mp4`, `final/captions.srt`, `final/cover.png`,
+`final/contact_sheet.png`, `final/narration.json`, `final/publishing.json`,
+`final/review_summary.json`, and `validation.json`. The draft remains `awaiting_review`.
+Configured cost estimates are recorded in the batch `job_cost.json`; they may be incomplete if
+provider prices are not configured and are not exact billing statements.
+
+Before publishing, inspect encoded frames and listen to the complete narration, independently
+verify the listed claims, review rights and the exact metadata, then schedule one topic explicitly:
+
+```powershell
+python -m pipeline.youtube upload-editorial `
+    --batch-id bond_source_topics `
+    --topic topic-1 `
+    --channel-id UC_REPLACE_WITH_YOUR_CHANNEL_ID `
+    --publish-at "REPLACE_WITH_FUTURE_ISO_8601_TIME_AND_OFFSET" `
+    --made-for-kids no `
+    --contains-synthetic-media yes `
+    --approve `
+    --evidence-reviewed `
+    --confirm-rights
+```
+
+All flags shown are deliberate: the user supplies the exact channel and offset-aware future time,
+declares audience/synthetic-media classification, approves the rendered video, attests that claims
+were independently reviewed, and confirms rights. The uploader hashes the approved video and
+publishing metadata, requires the authorized channel to match, keeps the remote upload private
+until its scheduled time, and verifies YouTube's accepted schedule. It does not run during
+drafting/rendering, batch-schedule the other topics, or modify previously accepted schedules.
+YouTube acceptance is not a guarantee of processing, public availability, rights clearance, or
+monetization.

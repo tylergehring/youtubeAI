@@ -94,14 +94,19 @@ class ExplainerGraphics:
             self.text(d, f"{s.long_years}-YEAR EXAMPLE", 135, 660, 800, 48, 26, GOLD, True)
             self.text(d, "PROMISED", 135, 765, 330, 48, 26, MUTED, True)
             self.text(d, c["face"], 135, 820, 340, 125, 92, WHITE, True)
-            self.text(d, "IF SOLD TODAY", 620, 765, 330, 48, 26, MUTED, True)
-            self.text(d, c["long_price"], 620, 820, 340, 125, 92, CORAL, True)
-            arrow_end = 500 + round(75 * p)
-            d.line((470, 880, arrow_end, 880), fill=GOLD, width=7)
-            d.polygon(
-                [(arrow_end, 880), (arrow_end - 20, 865), (arrow_end - 20, 895)],
-                fill=GOLD,
-            )
+            reveal = min(1.0, max(0.0, (p - 0.18) / 0.6))
+            if reveal:
+                label_y = 765 + round(30 * (1 - reveal))
+                price_y = 820 + round(45 * (1 - reveal))
+                price_size = 68 + round(24 * reveal)
+                self.text(d, "IF SOLD TODAY", 620, label_y, 330, 48, 26, MUTED, True)
+                self.text(d, c["long_price"], 620, price_y, 340, 125, price_size, CORAL, True)
+                arrow_end = 470 + round(105 * reveal)
+                d.line((470, 880, arrow_end, 880), fill=GOLD, width=7)
+                d.polygon(
+                    [(arrow_end, 880), (arrow_end - 20, 865), (arrow_end - 20, 895)],
+                    fill=GOLD,
+                )
         elif kind == "yield":
             for x, label, value, detail, color in [
                 (135, "YOUR BOND", c["coupon_pct"], f"{c['coupon_payment']} each check", TEAL),

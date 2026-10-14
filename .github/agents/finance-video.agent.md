@@ -192,7 +192,7 @@ Core surfaces:
 .\.venv\Scripts\python.exe -m pipeline.explainer render `
     --brief examples\explainers\bond_price_risk.yaml `
     --research workspace\research\bond_risk_source `
-    --job-id bond_risk_background_demo_final `
+    --job-id bond_risk_opening_reveal `
     --background-video C:\Users\tyler\Downloads\AiYoutube\video\16405360_1080_1920_25fps.mp4 `
     --approve-evidence
 ```
@@ -400,7 +400,10 @@ not independently audited licensing. Preserve any required attribution.
   the supplied 46.08-second vertical waterfront clip, softened/darkened behind the graphics;
   clip audio is absent and none is used. The 44.39-second final passes technical QA and
   remains `awaiting_review`. The final visual revision reused the intact narration cache.
-- Latest complete validation: **458 tests passed**, lint passed, mypy passed for 77 source files.
+- Opening-reveal revision: `workspace/explainers/bond_risk_opening_reveal/`. The face value
+  appears first, then the hypothetical sale price/arrow animate in during the opening seconds.
+  It reuses the same voice cache and background; status remains `awaiting_review`.
+- Latest complete validation: **464 tests passed**, Ruff passed, mypy passed for 77 source files.
   Re-run relevant checks after new changes; this is not a permanent test guarantee.
 
 ## Engineering and completion workflow

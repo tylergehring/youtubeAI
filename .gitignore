@@ -10,6 +10,7 @@ oauth-client*.json
 youtube-token*.json
 workspace/batches/
 workspace/explainers/
+workspace/editorial_batches/
 workspace/research/
 workspace/jobs/*
 workspace/output/*

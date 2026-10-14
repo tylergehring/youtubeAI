@@ -13,7 +13,7 @@ from core.models.content import Transcript, TranscriptSegment
 from core.storage import read_model, write_model
 from core.youtube_transcript import YouTubeSource, fetch_transcript, video_id_from_url
 from pipeline.explainer import load_brief, preflight
-from rendering.explainer import TEAL, ExplainerGraphics
+from rendering.explainer import CORAL, TEAL, ExplainerGraphics
 
 BRIEF = Path(__file__).resolve().parents[2] / "examples" / "explainers" / "bond_price_risk.yaml"
 
@@ -169,6 +169,20 @@ def test_comparison_chart_reveals_bars_early() -> None:
     scene = next(scene for scene in brief.scenes if scene.visual == "comparison")
     frame = ExplainerGraphics(brief.scenario).frame(scene, 2, len(brief.scenes), 0.15)
     assert frame.getpixel((300, 820)) == ImageColor.getrgb(TEAL)
+
+
+def test_opening_reveals_sale_price_after_face_value() -> None:
+    brief = load_brief(BRIEF)
+    scene = next(scene for scene in brief.scenes if scene.visual == "hook")
+    graphics = ExplainerGraphics(brief.scenario)
+    early = graphics.frame(scene, 0, len(brief.scenes), 0.0)
+    later = graphics.frame(scene, 0, len(brief.scenes), 0.5)
+    color = ImageColor.getrgb(CORAL)
+    sale_area = (600, 750, 980, 1020)
+    early_colors = early.crop(sale_area).getcolors(103_000) or []
+    later_colors = later.crop(sale_area).getcolors(103_000) or []
+    assert sum(count for count, pixel in early_colors if pixel == color) == 0
+    assert sum(count for count, pixel in later_colors if pixel == color) > 0
 
 
 def test_rewritten_source_is_not_a_substitute_for_original_script(tmp_path: Path) -> None:
