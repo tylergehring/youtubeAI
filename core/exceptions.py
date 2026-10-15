@@ -53,6 +53,10 @@ class ProviderError(VidgenError):
         self.usage = usage
 
 
+class MarketDataError(VidgenError):
+    """Market-data acquisition or validation failed."""
+
+
 class StructuredOutputError(ProviderError):
     """An LLM returned output that does not match the requested schema."""
 

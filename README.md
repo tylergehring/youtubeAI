@@ -306,15 +306,19 @@ To brief an LLM on the finance Reel format and get topic ideas turned into specs
 
 See [docs/architecture.md](docs/architecture.md), [docs/pipeline.md](docs/pipeline.md),
 [docs/providers.md](docs/providers.md) and [docs/development.md](docs/development.md).
+For a reusable local two-ticker historical price comparison, see
+[docs/stock_comparison.md](docs/stock_comparison.md). Its chart-first renderer uses a minimal
+white or black design with dynamically expanding time and value axes; white is the default.
+It can optionally add a randomly selected local music track.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
 | `core/` | Models, job store/state machine, config, logging, cost tracking, provider interfaces |
-| `pipeline/` | One module per stage (`python -m pipeline.<stage> --job ID`), plus `run` and `jobs` |
+| `pipeline/` | One module per stage (`python -m pipeline.<stage> --job ID`), plus `run`, `jobs`, and local stock comparison |
 | `providers/` | Concrete providers behind the interfaces (mock only for now) |
-| `rendering/` | FFmpeg wrapper, timeline resolution, renderer abstraction, finance reel layout/renderer |
+| `rendering/` | FFmpeg wrapper, timeline resolution, renderer abstraction, finance reel and stock-comparison graphics |
 | `examples/` | Example finance reel specs (`examples/finance/`) |
 | `config/` | `settings.yaml`, `styles.yaml`, `providers.yaml` |
 | `workspace/` | Generated jobs (git-ignored) |

@@ -94,6 +94,18 @@ validated before the job exists and copied (with SHA-256) into `source/reel/`; a
 invalid file fails creation clearly and leaves no job behind. `ingest.allowed_dirs` applies to
 them too.
 
+## Historical stock comparisons
+
+`python -m pipeline.stock_comparison` is a separate, reusable local workflow for a two-ticker
+price-only comparison. It fetches daily Yahoo Finance closes through the latest completed
+common date, computes fractional-share hypothetical balances with Decimal arithmetic, and
+animates a minimal chart starting on the first frame. The date axis and logarithmic value-axis
+ceiling expand with the visible history; the value-axis floor stays at the initial investment,
+with lower values clipped at that baseline. It encodes and technically validates a portrait MP4,
+silent by default with optional looped local music. It does not use the explainer providers,
+create narration, or publish. See
+[docs/stock_comparison.md](stock_comparison.md) for setup, methodology, and CLI use.
+
 ### Spec fields (JSON or YAML, `examples/finance/`)
 
 | Field | Notes |

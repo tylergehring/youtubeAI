@@ -12,6 +12,7 @@ workspace/batches/
 workspace/explainers/
 workspace/editorial_batches/
 workspace/research/
+workspace/stock_comparisons/
 workspace/jobs/*
 workspace/output/*
 !workspace/jobs/.gitkeep

@@ -26,6 +26,9 @@ youtube = [
     "google-auth-oauthlib>=1.2,<2",
     "keyring>=25,<26",
 ]
+market-data = [
+    "yfinance>=0.2.66,<1",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
