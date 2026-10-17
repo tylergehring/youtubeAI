@@ -12,6 +12,7 @@ from core.exceptions import ConfigError, InvalidInputError, StageError
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 SERVICE = "youtubeAI"
 TOKEN_KEY = "google-oauth"

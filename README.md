@@ -118,7 +118,8 @@ python -m pipeline.youtube upload --job JOB_ID `
 
 Create a Google Cloud **Desktop app** OAuth client with YouTube Data API v3 enabled; add your
 Google account as a test user while the OAuth app is in Testing. Browser authorization requests
-upload and read-only permissions so the destination and schedule can be checked. Tokens and
+upload, read-only, and video-edit permissions so the destination and schedule can be checked or
+changed. The video-edit scope also permits broader video changes, including deletion. Tokens and
 resumable-upload URLs are stored in the OS credential store (Windows Credential Manager here),
 not in the project. Keep the client JSON outside the repository.
 

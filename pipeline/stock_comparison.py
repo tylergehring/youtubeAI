@@ -9,6 +9,7 @@ import json
 import os
 import random
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -18,7 +19,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from core.exceptions import InvalidInputError, MarketDataError, RenderError, VidgenError
-from core.models.stock_comparison import StockComparison
+from core.models.stock_comparison import SamplingFrequency, StockComparison
 from core.stock_comparison import (
     PriceDownload,
     build_stock_comparison,
@@ -37,6 +38,16 @@ from rendering.stock_comparison import (
 _EASTERN = ZoneInfo("America/New_York")
 DEFAULT_AUDIO_DIR = Path(r"C:\Users\tyler\Downloads\AiYoutube\audio")
 _AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".m4a", ".aac"})
+_YOUTUBE_HASHTAGS = ("StockMarket", "Investing", "FinancialEducation", "Shorts")
+_YOUTUBE_TAGS = (
+    "stock comparison",
+    "historical stock performance",
+    "stock market",
+    "investing education",
+    "price-only returns",
+    "financial education",
+    "personal finance",
+)
 
 
 @dataclass(frozen=True)
@@ -49,11 +60,41 @@ class StockComparisonRun:
 
 def _suggested_title(comparison: StockComparison) -> str:
     final = comparison.points[-1]
-    return (
+    title = (
         f"${comparison.initial_investment:,f} in {comparison.label_a} vs. "
         f"{comparison.label_b}: ${final.value_a:,.0f} vs. ${final.value_b:,.0f} "
         f"({comparison.start_date.year}-{comparison.end_date.year}, price only)"
     )
+    if len(title) <= 100:
+        return title
+
+    year_range = f"{comparison.start_date.year}-{comparison.end_date.year}"
+    for name_a, name_b in (
+        (comparison.label_a, comparison.label_b),
+        (comparison.ticker_a, comparison.ticker_b),
+    ):
+        title = f"{name_a} vs. {name_b}: Price-only stock comparison ({year_range})"
+        if len(title) <= 100:
+            return title
+    raise InvalidInputError("Could not create a YouTube title within the 100-character limit.")
+
+
+def _youtube_tags(comparison: StockComparison) -> list[str]:
+    tags: list[str] = []
+    seen: set[str] = set()
+    for candidate in (
+        comparison.ticker_a,
+        comparison.label_a,
+        comparison.ticker_b,
+        comparison.label_b,
+        *_YOUTUBE_TAGS,
+    ):
+        tag = candidate.strip()
+        key = tag.casefold()
+        if tag and key not in seen:
+            tags.append(tag)
+            seen.add(key)
+    return tags
 
 
 def _parse_date(value: str) -> date:
@@ -126,24 +167,86 @@ def _write_outputs(
     as_of_date: date,
     history_end_exclusive: date,
     yfinance_version: str,
+    history_start_by_ticker: Mapping[str, date] | None = None,
+    history_cache_used: bool = False,
     selected_audio: Path | None = None,
 ) -> None:
-    description = (
-        f"A hypothetical ${comparison.initial_investment:,f} investment in each stock "
-        f"from {comparison.start_date.isoformat()} through {comparison.end_date.isoformat()}. "
-        "Price-only comparison using split-adjusted historical closing prices; dividends "
-        "are excluded. Assumes fractional shares and excludes fees, taxes, and inflation. "
-        "Historical illustration, not a forecast or investment advice. "
-        f"Source: Yahoo Finance historical data via yfinance for "
-        f"{comparison.ticker_a} and {comparison.ticker_b}."
+    if history_start_by_ticker is None:
+        history_start_by_ticker = {
+            comparison.ticker_a: comparison.expected_first_date_a
+            or comparison.requested_start_date,
+            comparison.ticker_b: comparison.requested_start_date,
+        }
+    source_urls = [
+        f"https://finance.yahoo.com/quote/{comparison.ticker_a}/history/",
+        f"https://finance.yahoo.com/quote/{comparison.ticker_b}/history/",
+        "https://github.com/ranaroussi/yfinance",
+    ]
+    hashtags = list(_YOUTUBE_HASHTAGS)
+    final = comparison.points[-1]
+    description = "\n\n".join(
+        [
+            (
+                f"A hypothetical ${comparison.initial_investment:,f} invested in each of "
+                f"{comparison.label_a} ({comparison.ticker_a}) and "
+                f"{comparison.label_b} ({comparison.ticker_b}) from "
+                f"{comparison.start_date.isoformat()} through "
+                f"{comparison.end_date.isoformat()}."
+            ),
+            (
+                "Ending hypothetical values at the last common close:\n"
+                f"{comparison.label_a} ({comparison.ticker_a}): ${final.value_a:,.2f}\n"
+                f"{comparison.label_b} ({comparison.ticker_b}): ${final.value_b:,.2f}"
+            ),
+            (
+                "Method: split-adjusted historical closing prices, not dividend-adjusted. "
+                "Dividends and reinvestment are excluded. Assumes fractional shares and "
+                "excludes fees, taxes, inflation, and execution effects. Values are nominal."
+                f" Sampling frequency: {comparison.sampling_frequency}."
+            ),
+            (
+                "Data: Yahoo Finance historical data retrieved through yfinance, an "
+                "independent client that is not an official Yahoo Finance product. "
+                "Historical data may be revised.\n"
+                + "\n".join(source_urls)
+            ),
+            (
+                "Historical illustration only—not total return, investment advice, a "
+                "recommendation, or a forecast."
+            ),
+            " ".join(f"#{tag}" for tag in hashtags),
+        ]
     )
     (output_dir / "publishing.json").write_text(
         json.dumps(
             {
                 "state": "draft_metadata",
+                "platform": "YouTube",
                 "title": _suggested_title(comparison),
                 "description": description,
+                "tags": _youtube_tags(comparison),
+                "hashtags": hashtags,
                 "data_as_of": comparison.end_date.isoformat(),
+                "sampling_frequency": comparison.sampling_frequency,
+                "source_urls": source_urls,
+                "assets": {
+                    "video": "video.mp4",
+                    "thumbnail_candidate": "cover.png",
+                },
+                "review_required": True,
+                "review_notes": [
+                    "Review the rendered video and metadata before upload.",
+                    (
+                        "Confirm source attribution and applicable data-use rights "
+                        "before external use."
+                    ),
+                    "Choose audience, category, visibility, and scheduling settings in YouTube.",
+                ]
+                + (
+                    ["Confirm music usage rights and required attribution."]
+                    if selected_audio is not None
+                    else []
+                ),
                 "uploaded": False,
                 "scheduled": False,
             },
@@ -163,10 +266,16 @@ def _write_outputs(
                 "provider_package": "yfinance",
                 "provider_package_version": yfinance_version,
                 "as_of_eastern_date": as_of_date.isoformat(),
-                "history_start_inclusive": comparison.expected_first_date_a.isoformat()
-                if comparison.expected_first_date_a
-                else comparison.requested_start_date.isoformat(),
+                "history_start_inclusive": history_start_by_ticker[
+                    comparison.ticker_a
+                ].isoformat(),
+                "history_start_inclusive_by_ticker": {
+                    ticker: start.isoformat()
+                    for ticker, start in history_start_by_ticker.items()
+                },
+                "history_cache_used": history_cache_used,
                 "comparison_start_date": comparison.requested_start_date.isoformat(),
+                "sampling_frequency": comparison.sampling_frequency,
                 "history_end_exclusive": history_end_exclusive.isoformat(),
                 "history_parameters": {
                     "interval": "1d",
@@ -186,11 +295,7 @@ def _write_outputs(
                     "Count and omit non-finite Close rows. Intersect exact dates; do not "
                     "forward-fill, interpolate, or infer a price."
                 ),
-                "source_urls": [
-                    f"https://finance.yahoo.com/quote/{comparison.ticker_a}/history/",
-                    f"https://finance.yahoo.com/quote/{comparison.ticker_b}/history/",
-                    "https://github.com/ranaroussi/yfinance",
-                ],
+                "source_urls": source_urls,
             },
             indent=2,
         )
@@ -198,7 +303,9 @@ def _write_outputs(
         encoding="utf-8",
     )
 
-    with (output_dir / "daily_values.csv").open("w", newline="", encoding="utf-8") as csv_file:
+    with (
+        output_dir / f"{comparison.sampling_frequency}_values.csv"
+    ).open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.writer(csv_file)
         writer.writerow(
             [
@@ -259,6 +366,12 @@ def _write_outputs(
   {yfinance_version}; start dates are inclusive and end dates exclusive. The observed first
   valid {comparison.ticker_a} date in the fetched maximum history was
   {comparison.first_available_date_a.isoformat()}.
+- **Sampling frequency:** {comparison.sampling_frequency}. Daily mode uses every common
+  observed close. Weekly mode uses the last common observed close in each completed
+  Monday-to-Friday week and omits an incomplete current week. Source histories are still
+  fetched daily so weekly observations use exact common trading dates and year-end checkpoints
+  retain the last common close in each completed calendar year. Weekly sampling reduces
+  comparison points and rendering work, not the amount of history downloaded.
 - **Calculation:** Fractional shares are assumed. For each symbol, hypothetical value is
   initial investment × that date's historical Close ÷ the entry-date Close. Decimal
   arithmetic is rounded half-up to cents for recorded market values.
@@ -267,7 +380,7 @@ def _write_outputs(
   excluded, so this is a price-only comparison rather than total return.
 - **Calendar:** Only exact dates with finite, positive closes for both symbols are compared.
   Missing rows are counted and omitted; no forward-fill, interpolation, added contributions,
-  or synthetic prices are used. Each year-end checkpoint is the last common trading
+  or synthetic prices are used. Each year-end checkpoint is the last common daily trading
   observation in that completed calendar year.
 - **Other exclusions:** Nominal dollars; no fees, taxes, inflation adjustment, or claim that
   an investor could have executed at the displayed closing price. History can be corrected
@@ -282,123 +395,37 @@ def _write_outputs(
     (output_dir / "methodology.md").write_text(methodology, encoding="utf-8")
 
 
-def _validate_media(
-    ffmpeg: FFmpeg,
-    video: Path,
-    expected_duration: float,
-    expected_width: int,
-    expected_height: int,
-    expected_fps: int,
-    expected_audio: bool = False,
-) -> MediaInfo:
-    info = ffmpeg.analyze(video)
-    if not info.has_video:
-        raise RenderError("Rendered MP4 must contain a video stream.")
-    if info.has_audio != expected_audio:
-        expectation = "an audio stream" if expected_audio else "no audio stream"
-        raise RenderError(f"Rendered MP4 must contain {expectation}.")
-    if expected_audio and (info.mean_volume_db is None or info.mean_volume_db <= -60):
-        raise RenderError("Rendered audio is silent or below the -60 dB mean-volume threshold.")
-    if (info.width, info.height) != (expected_width, expected_height):
-        raise RenderError(
-            f"Unexpected video dimensions {(info.width, info.height)}; "
-            f"expected {(expected_width, expected_height)}."
-        )
-    if info.fps is None or abs(info.fps - expected_fps) > 0.1:
-        raise RenderError(f"Unexpected video frame rate {info.fps}; expected {expected_fps} fps.")
-    if abs(info.duration_s - expected_duration) > 0.15:
-        raise RenderError(
-            f"Unexpected video duration {info.duration_s:.3f}s; expected {expected_duration:.3f}s."
-        )
-    return info
-
-
-def run_stock_comparison(
-    *,
-    ticker_a: str,
-    label_a: str,
-    ticker_b: str,
-    label_b: str,
-    start_date: date,
+def _render_prepared_comparison(
+    comparison: StockComparison,
     output_dir: Path,
-    initial_investment: Decimal = Decimal("10000"),
-    expected_first_date_a: date | None = None,
-    through_date: date | None = None,
+    *,
+    as_of_date: date,
+    history_end_exclusive: date,
+    yfinance_version: str,
+    history_start_by_ticker: Mapping[str, date] | None = None,
+    history_cache_used: bool = False,
     ffmpeg: FFmpeg | None = None,
+    graphics: StockComparisonGraphics | None = None,
     fps: int = 30,
     width: int = 1080,
     height: int = 1920,
     background: ChartBackground = "white",
-    audio: bool = False,
-    audio_dir: Path = DEFAULT_AUDIO_DIR,
+    content_scale: float = 1.0,
+    selected_audio: Path | None = None,
+    chart_s: float = 36.0,
+    end_hold_s: float = 3.0,
 ) -> StockComparisonRun:
-    """Run a new one-off local job. Existing output directories are never overwritten."""
     output_dir = output_dir.resolve()
     if output_dir.exists():
         raise InvalidInputError(
             f"Output directory already exists and will not be overwritten: {output_dir}"
         )
-    graphics = StockComparisonGraphics(width, height, background=background)
-    selected_audio = _select_audio_track(audio_dir) if audio else None
-    symbol_a = validate_ticker(ticker_a)
-    symbol_b = validate_ticker(ticker_b)
-    if symbol_a == symbol_b:
-        raise InvalidInputError("Choose two different ticker symbols.")
-    if start_date > date.today():
-        raise InvalidInputError("The requested start date must not be in the future.")
-
-    now_eastern = datetime.now(_EASTERN)
-    inclusive_cutoff, default_end_exclusive = latest_completed_history_end(now_eastern)
-    if through_date is not None:
-        if through_date > inclusive_cutoff:
-            raise InvalidInputError(
-                f"through-date must not be later than the completed-history cutoff "
-                f"{inclusive_cutoff.isoformat()}."
-            )
-        end_exclusive = through_date + timedelta(days=1)
-        completed_through_year = min(through_date.year, now_eastern.year - 1)
-    else:
-        end_exclusive = default_end_exclusive
-        completed_through_year = now_eastern.year - 1
-    if start_date >= end_exclusive:
-        raise InvalidInputError("The history end must be after the requested start date.")
-
-    verify_start = date(1900, 1, 1) if expected_first_date_a is not None else start_date
-    download_a = _download_rows(symbol_a, verify_start, end_exclusive)
-    download_b = _download_rows(symbol_b, start_date, end_exclusive)
-    if (
-        expected_first_date_a is not None
-        and download_a.first_available_date != expected_first_date_a
-    ):
-        raise MarketDataError(
-            f"First valid {symbol_a} Close in the full fetched history is "
-            f"{download_a.first_available_date}; expected {expected_first_date_a}."
-        )
-    prices_a = _trim_prices(download_a, start_date, end_exclusive)
-    prices_b = _trim_prices(download_b, start_date, end_exclusive)
-    comparison = build_stock_comparison(
-        ticker_a=symbol_a,
-        label_a=label_a or symbol_a,
-        prices_a=prices_a,
-        ticker_b=symbol_b,
-        label_b=label_b or symbol_b,
-        prices_b=prices_b,
-        requested_start_date=start_date,
-        initial_investment=initial_investment,
-        completed_through_year=completed_through_year,
-        expected_first_date_a=expected_first_date_a,
-        first_available_date_a=download_a.first_available_date,
-        missing_close_rows_a=download_a.missing_close_rows,
-        missing_close_rows_b=download_b.missing_close_rows,
-        download_rows_a=download_a.download_rows,
-        download_rows_b=download_b.download_rows,
+    graphics = graphics or StockComparisonGraphics(
+        width,
+        height,
+        background=background,
+        content_scale=content_scale,
     )
-    if comparison.end_date > inclusive_cutoff:
-        raise MarketDataError(
-            f"The provider returned a close on {comparison.end_date} beyond the completed "
-            f"history cutoff {inclusive_cutoff}."
-        )
-
     output_dir.mkdir(parents=True, exist_ok=False)
     state_path = output_dir / "run_state.json"
     state_path.write_text(
@@ -408,9 +435,11 @@ def run_stock_comparison(
     _write_outputs(
         output_dir,
         comparison,
-        as_of_date=now_eastern.date(),
-        history_end_exclusive=end_exclusive,
-        yfinance_version=version("yfinance"),
+        as_of_date=as_of_date,
+        history_end_exclusive=history_end_exclusive,
+        yfinance_version=yfinance_version,
+        history_start_by_ticker=history_start_by_ticker,
+        history_cache_used=history_cache_used,
         selected_audio=selected_audio,
     )
 
@@ -419,6 +448,8 @@ def run_stock_comparison(
         renderer_ffmpeg,
         graphics,
         fps=fps,
+        chart_s=chart_s,
+        end_hold_s=end_hold_s,
     )
     video = output_dir / "video.mp4"
     audio_snapshot: Path | None = None
@@ -459,7 +490,10 @@ def run_stock_comparison(
             "scheduled": False,
             "audio_stream_present": media_info.has_audio,
             "audio_track": audio_track_record,
-            "visual_style": {"background": background},
+            "visual_style": {
+                "background": background,
+                "content_scale": content_scale,
+            },
             "media": {
                 "video": str(video),
                 "duration_seconds": media_info.duration_s,
@@ -478,6 +512,7 @@ def run_stock_comparison(
             "data": {
                 "start_date": comparison.start_date.isoformat(),
                 "end_date": comparison.end_date.isoformat(),
+                "sampling_frequency": comparison.sampling_frequency,
                 "observations": comparison.common_observation_count,
                 "year_end_checkpoints": len(comparison.year_end_checkpoints),
                 "entry_close_a": str(comparison.entry_price_a),
@@ -531,6 +566,154 @@ def run_stock_comparison(
     return StockComparisonRun(output_dir, video, comparison, media_info)
 
 
+def _validate_media(
+    ffmpeg: FFmpeg,
+    video: Path,
+    expected_duration: float,
+    expected_width: int,
+    expected_height: int,
+    expected_fps: int,
+    expected_audio: bool = False,
+) -> MediaInfo:
+    info = ffmpeg.analyze(video)
+    if not info.has_video:
+        raise RenderError("Rendered MP4 must contain a video stream.")
+    if info.has_audio != expected_audio:
+        expectation = "an audio stream" if expected_audio else "no audio stream"
+        raise RenderError(f"Rendered MP4 must contain {expectation}.")
+    if expected_audio and (info.mean_volume_db is None or info.mean_volume_db <= -60):
+        raise RenderError("Rendered audio is silent or below the -60 dB mean-volume threshold.")
+    if (info.width, info.height) != (expected_width, expected_height):
+        raise RenderError(
+            f"Unexpected video dimensions {(info.width, info.height)}; "
+            f"expected {(expected_width, expected_height)}."
+        )
+    if info.fps is None or abs(info.fps - expected_fps) > 0.1:
+        raise RenderError(f"Unexpected video frame rate {info.fps}; expected {expected_fps} fps.")
+    if abs(info.duration_s - expected_duration) > 0.15:
+        raise RenderError(
+            f"Unexpected video duration {info.duration_s:.3f}s; expected {expected_duration:.3f}s."
+        )
+    return info
+
+
+def run_stock_comparison(
+    *,
+    ticker_a: str,
+    label_a: str,
+    ticker_b: str,
+    label_b: str,
+    start_date: date,
+    output_dir: Path,
+    initial_investment: Decimal = Decimal("10000"),
+    expected_first_date_a: date | None = None,
+    through_date: date | None = None,
+    ffmpeg: FFmpeg | None = None,
+    fps: int = 30,
+    width: int = 1080,
+    height: int = 1920,
+    background: ChartBackground = "white",
+    content_scale: float = 1.0,
+    audio: bool = False,
+    audio_dir: Path = DEFAULT_AUDIO_DIR,
+    frequency: SamplingFrequency = "daily",
+) -> StockComparisonRun:
+    """Run a new one-off local job. Existing output directories are never overwritten."""
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        raise InvalidInputError(
+            f"Output directory already exists and will not be overwritten: {output_dir}"
+        )
+    graphics = StockComparisonGraphics(
+        width,
+        height,
+        background=background,
+        content_scale=content_scale,
+    )
+    selected_audio = _select_audio_track(audio_dir) if audio else None
+    symbol_a = validate_ticker(ticker_a)
+    symbol_b = validate_ticker(ticker_b)
+    if symbol_a == symbol_b:
+        raise InvalidInputError("Choose two different ticker symbols.")
+    if start_date > date.today():
+        raise InvalidInputError("The requested start date must not be in the future.")
+
+    now_eastern = datetime.now(_EASTERN)
+    inclusive_cutoff, default_end_exclusive = latest_completed_history_end(now_eastern)
+    if through_date is not None:
+        if through_date > inclusive_cutoff:
+            raise InvalidInputError(
+                f"through-date must not be later than the completed-history cutoff "
+                f"{inclusive_cutoff.isoformat()}."
+            )
+        end_exclusive = through_date + timedelta(days=1)
+        completed_through_year = min(through_date.year, now_eastern.year - 1)
+    else:
+        end_exclusive = default_end_exclusive
+        completed_through_year = now_eastern.year - 1
+    if start_date >= end_exclusive:
+        raise InvalidInputError("The history end must be after the requested start date.")
+    if frequency not in ("daily", "weekly"):
+        raise InvalidInputError(
+            f"Unsupported sampling frequency {frequency!r}; choose 'daily' or 'weekly'."
+        )
+
+    verify_start = date(1900, 1, 1) if expected_first_date_a is not None else start_date
+    download_a = _download_rows(symbol_a, verify_start, end_exclusive)
+    download_b = _download_rows(symbol_b, start_date, end_exclusive)
+    if (
+        expected_first_date_a is not None
+        and download_a.first_available_date != expected_first_date_a
+    ):
+        raise MarketDataError(
+            f"First valid {symbol_a} Close in the full fetched history is "
+            f"{download_a.first_available_date}; expected {expected_first_date_a}."
+        )
+    prices_a = _trim_prices(download_a, start_date, end_exclusive)
+    prices_b = _trim_prices(download_b, start_date, end_exclusive)
+    comparison = build_stock_comparison(
+        ticker_a=symbol_a,
+        label_a=label_a or symbol_a,
+        prices_a=prices_a,
+        ticker_b=symbol_b,
+        label_b=label_b or symbol_b,
+        prices_b=prices_b,
+        requested_start_date=start_date,
+        initial_investment=initial_investment,
+        completed_through_year=completed_through_year,
+        frequency=frequency,
+        completed_through_date=through_date or inclusive_cutoff,
+        expected_first_date_a=expected_first_date_a,
+        first_available_date_a=download_a.first_available_date,
+        missing_close_rows_a=download_a.missing_close_rows,
+        missing_close_rows_b=download_b.missing_close_rows,
+        download_rows_a=download_a.download_rows,
+        download_rows_b=download_b.download_rows,
+    )
+    if comparison.end_date > inclusive_cutoff:
+        raise MarketDataError(
+            f"The provider returned a close on {comparison.end_date} beyond the completed "
+            f"history cutoff {inclusive_cutoff}."
+        )
+
+    return _render_prepared_comparison(
+        comparison,
+        output_dir,
+        as_of_date=now_eastern.date(),
+        history_end_exclusive=end_exclusive,
+        yfinance_version=version("yfinance"),
+        history_start_by_ticker={symbol_a: verify_start, symbol_b: start_date},
+        ffmpeg=ffmpeg,
+        graphics=graphics,
+        fps=fps,
+        width=width,
+        height=height,
+        background=background,
+        content_scale=content_scale,
+        selected_audio=selected_audio,
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m pipeline.stock_comparison",
@@ -555,10 +738,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--initial-investment", type=_parse_money, default=Decimal("10000"))
     parser.add_argument(
+        "--frequency",
+        choices=("daily", "weekly"),
+        default="daily",
+        help="Comparison sampling frequency; weekly uses completed weeks (default: daily).",
+    )
+    parser.add_argument(
         "--background",
         choices=("white", "black"),
         default="white",
         help="Chart background color (default: white).",
+    )
+    parser.add_argument(
+        "--content-scale",
+        type=float,
+        default=1.0,
+        help="Scale chart content within the 9:16 canvas (0.5-1.0; default: 1.0).",
     )
     parser.add_argument(
         "--audio",
@@ -594,8 +789,10 @@ def main(argv: list[str] | None = None) -> int:
             through_date=args.through_date,
             ffmpeg=ffmpeg,
             background=args.background,
+            content_scale=args.content_scale,
             audio=args.audio,
             audio_dir=args.audio_dir,
+            frequency=args.frequency,
         )
     except (VidgenError, OSError, ValueError) as exc:
         print(f"error: {exc}")
@@ -607,7 +804,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"dates: {result.comparison.start_date.isoformat()} through "
         f"{result.comparison.end_date.isoformat()} "
-        f"({result.comparison.common_observation_count} common observations)"
+        f"({result.comparison.common_observation_count} {result.comparison.sampling_frequency} "
+        "observations)"
     )
     print(
         f"{result.comparison.ticker_a}: ${final.value_a:,.2f}; "

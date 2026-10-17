@@ -21,6 +21,12 @@ from rendering.reel_layout import FontSet
 ChartBackground = Literal["white", "black"]
 
 
+def validate_content_scale(content_scale: float) -> float:
+    if not math.isfinite(content_scale) or not 0.5 <= content_scale <= 1.0:
+        raise RenderError("Stock-comparison content scale must be between 0.5 and 1.0.")
+    return content_scale
+
+
 @dataclass(frozen=True)
 class _ChartPalette:
     background: str
@@ -95,14 +101,30 @@ class StockComparisonGraphics:
         *,
         fonts: FontSet | None = None,
         background: ChartBackground = "white",
+        content_scale: float = 1.0,
     ) -> None:
         if width <= 0 or height <= 0 or width % 2 or height % 2:
             raise RenderError("Stock comparison rendering requires positive, even dimensions.")
+        content_scale = validate_content_scale(content_scale)
         self.width = width
         self.height = height
         self._scale = width / 1080
         self.fonts = fonts or FontSet()
         self.palette = _palette_for(background)
+        self._content_graphics: StockComparisonGraphics | None = None
+        if content_scale < 1.0:
+            content_width = round(width * content_scale)
+            content_height = round(height * content_scale)
+            content_width -= content_width % 2
+            content_height -= content_height % 2
+            if content_width < 2 or content_height < 2:
+                raise RenderError("Stock-comparison content scale leaves no drawable area.")
+            self._content_graphics = StockComparisonGraphics(
+                content_width,
+                content_height,
+                fonts=self.fonts,
+                background=background,
+            )
 
     def _x(self, value: float) -> int:
         return round(value * self.width / 1080)
@@ -145,6 +167,19 @@ class StockComparisonGraphics:
         """Return a chart-first frame; the last frame holds the fully expanded chart."""
         if elapsed_s < 0 or elapsed_s >= chart_s + end_hold_s:
             raise RenderError("Requested stock-comparison frame is outside the video timeline.")
+        if self._content_graphics is not None:
+            content = self._content_graphics.frame(
+                comparison,
+                elapsed_s,
+                chart_s=chart_s,
+                end_hold_s=end_hold_s,
+            )
+            canvas = Image.new("RGB", (self.width, self.height), self.palette.background)
+            canvas.paste(
+                content,
+                ((self.width - content.width) // 2, (self.height - content.height) // 2),
+            )
+            return canvas
         image = Image.new("RGB", (self.width, self.height), self.palette.background)
         draw = ImageDraw.Draw(image)
         progress = min(1.0, elapsed_s / chart_s)

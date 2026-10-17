@@ -1,72 +1,59 @@
-```powershell
+
+[CmdletBinding()]
+param(
+    [ValidateRange(1, 100)]
+    [int]$StartAt = 1,
+    [ValidateRange(1, 100)]
+    [int]$Count = 100,
+    [ValidateSet("daily", "weekly")]
+    [string]$Frequency = "daily",
+    [ValidateNotNullOrEmpty()]
+    [string]$OutputRoot = "C:\user\tyler\downloads\compare100stocks_audio_black"
+)
+
 $ErrorActionPreference = "Continue"
 
 # ============================================================
-# CONFIGURATION
+# Configuration
 # ============================================================
 
 $Python = ".\.venv\Scripts\python.exe"
-$OutputRoot = "C:\user\tyler\downloads\compare100stocks"
 $LogFile = Join-Path $OutputRoot "generation.log"
+$RenderWorkers = 2
+$AudioDirectory = "C:\Users\tyler\Downloads\AiYoutube\audio"
+$ChartContentScale = "0.90"
+$ChartBackground = "black"
+$Frequency = $Frequency.ToLowerInvariant()
 
-# Fixed starting point requested:
-# October 15, 2026, 12:58 PM Pacific Time.
-#
-# This script uses the computer's local time zone.
-$StartTime = [datetime]::new(2026, 10, 15, 12, 58, 0)
-
-# ============================================================
-# To Run:
-# ============================================================
-#
-# pip install -e ".[market-data,dev]"
-#
-# $env:FFMPEG_PATH = (& .\.venv\Scripts\python.exe -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")
-#
-# Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-#
-# .\stockCompare100.ps1
-#
-
-# ============================================================
-# PRE-FLIGHT CHECKS
-# ============================================================
-
+# Verify that the script is running from the repository root.
 if (-not (Test-Path $Python)) {
-    Write-Error "Python executable not found: $Python"
-    Write-Error "Run this script from your repository root."
+    Write-Error "Python executable not found at $Python. Run this script from your repository root."
     exit 1
 }
 
-# Avoid mixing this batch with previous outputs.
-if (Test-Path $OutputRoot) {
-    $ExistingItems = @(Get-ChildItem -Path $OutputRoot -Force)
+# Create the root directory.
+New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 
-    if ($ExistingItems.Count -gt 0) {
-        Write-Error "Output directory is not empty: $OutputRoot"
-        Write-Error "Move or remove existing contents before running."
-        exit 1
-    }
-}
-else {
-    New-Item -ItemType Directory -Path $OutputRoot -Force |
-        Out-Null
-}
-
-"Stock comparison batch started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" |
-    Set-Content $LogFile
+# Initialize logging.
+"Stock comparison generation started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" |
+    Add-Content $LogFile
+Add-Content $LogFile "Sampling frequency: $Frequency"
 
 # ============================================================
-# 100 STOCK COMPARISONS
+# Comparison definitions
 #
 # Format:
 # TickerA, LabelA, TickerB, LabelB, StartDate, VideoName
+#
+# Start dates are selected to approximate the beginning of
+# usable trading history for ticker A. The actual first common
+# trading date will depend on both stocks' available data.
 # ============================================================
 
 $Comparisons = @(
 
     # --------------------------------------------------------
-    # PART 1: S&P 500 ETF VS. 40 POPULAR STOCKS
+    # PART 1: S&P 500 vs. 40 popular stocks
     # --------------------------------------------------------
 
     @("SPY", "S&P 500", "AAPL", "Apple", "1993-01-29", "sp500_vs_apple"),
@@ -114,7 +101,7 @@ $Comparisons = @(
     @("SPY", "S&P 500", "BRK-B", "Berkshire Hathaway", "1996-05-09", "sp500_vs_berkshire"),
 
     # --------------------------------------------------------
-    # PART 2: 60 COMPARISONS BETWEEN TWO INDIVIDUAL STOCKS
+    # PART 2: 60 comparisons between two popular stocks
     # --------------------------------------------------------
 
     @("AAPL", "Apple", "MSFT", "Microsoft", "1986-03-13", "apple_vs_microsoft"),
@@ -148,7 +135,7 @@ $Comparisons = @(
     @("NVDA", "NVIDIA", "PLTR", "Palantir", "2020-09-30", "nvidia_vs_palantir"),
     @("NVDA", "NVIDIA", "TSLA", "Tesla", "2010-06-29", "nvidia_vs_tesla"),
     @("NVDA", "NVIDIA", "META", "Meta", "2012-05-18", "nvidia_vs_meta"),
-    @("NVDA", "NVIDIA", "AVGO", "Broadcom", "2009-08-06", "nvidia_vs_broadcom_2"),
+    @("NVDA", "NVIDIA", "AMZN", "Amazon", "1999-01-22", "nvidia_vs_amazon"),
 
     @("AMZN", "Amazon", "WMT", "Walmart", "1997-05-15", "amazon_vs_walmart"),
     @("AMZN", "Amazon", "COST", "Costco", "1997-05-15", "amazon_vs_costco"),
@@ -185,25 +172,26 @@ $Comparisons = @(
 )
 
 # ============================================================
-# VALIDATION
+# Validation
 # ============================================================
 
 if ($Comparisons.Count -ne 100) {
-    Write-Error "Expected 100 comparisons; found $($Comparisons.Count)."
+    Write-Error "Expected exactly 100 comparisons, but found $($Comparisons.Count)."
     exit 1
 }
 
-$Names = @($Comparisons | ForEach-Object { [string]$_.Get(5) })
+$Names = @($Comparisons | ForEach-Object { $_[5] })
 
 if (($Names | Select-Object -Unique).Count -ne 100) {
     Write-Error "Duplicate video directory names detected."
     exit 1
 }
 
+# Verify that each stock pair is unique regardless of ordering.
 $PairKeys = @(
     $Comparisons | ForEach-Object {
-        $Pair = @([string]$_[0], [string]$_[2]) | Sort-Object
-        "$($Pair[0])_$($Pair[1])"
+        $tickers = @([string]$_[0], [string]$_[2]) | Sort-Object
+        "$($tickers[0])_$($tickers[1])"
     }
 )
 
@@ -213,128 +201,116 @@ if (($PairKeys | Select-Object -Unique).Count -ne 100) {
 }
 
 $Sp500Count = @(
-    $Comparisons | Where-Object {
-        $_[0] -eq "SPY" -or $_[2] -eq "SPY"
-    }
+    $Comparisons | Where-Object { $_[0] -eq "SPY" -or $_[2] -eq "SPY" }
 ).Count
 
 if ($Sp500Count -ne 40) {
-    Write-Error "Expected 40 S&P 500 comparisons; found $Sp500Count."
+    Write-Error "Expected 40 S&P 500 comparisons, but found $Sp500Count."
     exit 1
 }
 
-Write-Host "Validated $($Comparisons.Count) comparisons." `
-    -ForegroundColor Green
-
-# ============================================================
-# CREATE PUBLISHING SCHEDULE
-# ============================================================
-
-# First scheduled slot after the specified starting time.
-$PublishTime = $StartTime.Date.AddHours(17)
-
-if ($StartTime.Hour -ge 17) {
-    $PublishTime = $StartTime.Date.AddDays(1).AddHours(5)
+if ($StartAt + $Count - 1 -gt $Comparisons.Count) {
+    Write-Error "Requested range from #$StartAt for $Count comparisons exceeds the 100-comparison list."
+    exit 1
 }
 
+$RunComparisons = @($Comparisons | Select-Object -Skip ($StartAt - 1) -First $Count)
+
+Write-Host ""
+Write-Host "Validated 100 unique stock comparisons." -ForegroundColor Green
+Write-Host "S&P 500 comparisons: $Sp500Count"
+Write-Host "Stock-versus-stock comparisons: $($Comparisons.Count - $Sp500Count)"
+Write-Host "Comparisons selected: $($RunComparisons.Count) (starting at #$StartAt)"
+Write-Host "Output: $OutputRoot"
+Write-Host ""
+
 # ============================================================
-# EXECUTION
+# Execution
 # ============================================================
 
 $SuccessCount = 0
 $FailureCount = 0
-$Index = 0
+$BatchManifest = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "stockCompare100-{0}.json" -f [guid]::NewGuid().ToString("N")
+)
+$BatchReport = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "stockCompare100-report-{0}.json" -f [guid]::NewGuid().ToString("N")
+)
+$BatchExitCode = 2
 
-foreach ($Comparison in $Comparisons) {
-
-    $Index++
-
-    $TickerA = [string]$Comparison[0]
-    $LabelA = [string]$Comparison[1]
-    $TickerB = [string]$Comparison[2]
-    $LabelB = [string]$Comparison[3]
-    $HistoricalStartDate = [string]$Comparison[4]
-    $VideoName = [string]$Comparison[5]
-
-    $OutputDirectory = Join-Path $OutputRoot $VideoName
-
-    # ISO-style local timestamp.
-    $PublishAt = $PublishTime.ToString("yyyy-MM-ddTHH:mm:ss")
-
-    Write-Host ""
-    Write-Host "[$Index/100] $LabelA vs $LabelB" `
-        -ForegroundColor Cyan
-
-    Write-Host "  Historical start: $HistoricalStartDate"
-    Write-Host "  Publish at:       $($PublishTime.ToString('yyyy-MM-dd h:mm tt'))"
-    Write-Host "  Output:           $OutputDirectory"
+try {
+    $BatchJobs = @(
+        foreach ($Comparison in $RunComparisons) {
+            [ordered]@{
+                ticker_a = [string]$Comparison[0]
+                label_a = [string]$Comparison[1]
+                ticker_b = [string]$Comparison[2]
+                label_b = [string]$Comparison[3]
+                start_date = [string]$Comparison[4]
+                video_name = [string]$Comparison[5]
+                initial_investment = "10000"
+            }
+        }
+    )
+    $ManifestJson = ConvertTo-Json -InputObject $BatchJobs -Depth 4
+    Set-Content -LiteralPath $BatchManifest -Value $ManifestJson -Encoding UTF8 -ErrorAction Stop
 
     $Arguments = @(
-        "-m", "pipeline.stock_comparison",
-        "--ticker-a", $TickerA,
-        "--label-a", $LabelA,
-        "--ticker-b", $TickerB,
-        "--label-b", $LabelB,
-        "--start-date", $HistoricalStartDate,
-        "--initial-investment", "10000",
-        "--out", $OutputDirectory,
-        "--publish",
-        "--publish-at", $PublishAt
+        "-u", "-m", "pipeline.stock_comparison_batch",
+        "--manifest", $BatchManifest,
+        "--output-root", $OutputRoot,
+        "--report", $BatchReport,
+        "--workers", [string]$RenderWorkers,
+        "--frequency", $Frequency,
+        "--background", $ChartBackground,
+        "--content-scale", $ChartContentScale,
+        "--audio",
+        "--audio-dir", $AudioDirectory
     )
 
-    # Run one comparison.
-    $RunOutput = & $Python @Arguments 2>&1
-    $ExitCode = $LASTEXITCODE
+    & $Python @Arguments 2>&1 | Tee-Object -FilePath $LogFile -Append
+    $BatchExitCode = $LASTEXITCODE
 
-    $RunOutput | Out-File `
-        -FilePath $LogFile `
-        -Append `
-        -Encoding utf8
-
-    if ($ExitCode -eq 0) {
-
-        $SuccessCount++
-
-        Write-Host "  SUCCESS" -ForegroundColor Green
-
-        Add-Content $LogFile `
-            "SUCCESS: $VideoName | Publish: $PublishAt"
-    }
-    else {
-
-        $FailureCount++
-
-        Write-Host "  FAILED: exit code $ExitCode" `
-            -ForegroundColor Red
-
-        Add-Content $LogFile `
-            "FAILED: $VideoName | Publish: $PublishAt | Exit: $ExitCode"
+    if (-not (Test-Path -LiteralPath $BatchReport)) {
+        throw "Batch runner did not create its result report (exit code $BatchExitCode)."
     }
 
-    # Advance to the next 5 AM / 5 PM slot.
-    if ($PublishTime.Hour -eq 17) {
-        $PublishTime = $PublishTime.Date.AddDays(1).AddHours(5)
+    $BatchResult = Get-Content -LiteralPath $BatchReport -Raw |
+        ConvertFrom-Json -ErrorAction Stop
+    if ($BatchResult.total -ne $RunComparisons.Count) {
+        throw "Batch report contains $($BatchResult.total) results; expected $($RunComparisons.Count)."
     }
-    else {
-        $PublishTime = $PublishTime.Date.AddHours(17)
+
+    $SuccessCount = [int]$BatchResult.succeeded
+    $FailureCount = [int]$BatchResult.failed
+}
+catch {
+    Write-Error "Batch generation failed: $($_.Exception.Message)"
+    $SuccessCount = 0
+    $FailureCount = $RunComparisons.Count
+}
+finally {
+    if (Test-Path -LiteralPath $BatchManifest) {
+        Remove-Item -LiteralPath $BatchManifest -Force
+    }
+    if (Test-Path -LiteralPath $BatchReport) {
+        Remove-Item -LiteralPath $BatchReport -Force
     }
 }
 
 # ============================================================
-# SUMMARY
+# Summary
 # ============================================================
 
-Write-Host ""
 Write-Host "============================================================"
 Write-Host "GENERATION COMPLETE"
 Write-Host "============================================================"
-Write-Host "Total comparisons: $($Comparisons.Count)"
-Write-Host "S&P 500 comparisons: $Sp500Count"
-Write-Host "Stock vs. stock comparisons: $($Comparisons.Count - $Sp500Count)"
-Write-Host "Successful: $SuccessCount"
-Write-Host "Failed: $FailureCount"
-Write-Host "Output directory: $OutputRoot"
-Write-Host "Log file: $LogFile"
+Write-Host "Starting comparison: #$StartAt"
+Write-Host "Total comparisons:  $($RunComparisons.Count)"
+Write-Host "Successful:         $SuccessCount" -ForegroundColor Green
+Write-Host "Failed:             $FailureCount" -ForegroundColor Red
+Write-Host "Output directory:   $OutputRoot"
+Write-Host "Log file:           $LogFile"
 Write-Host "============================================================"
 
 Add-Content $LogFile ""
@@ -342,7 +318,6 @@ Add-Content $LogFile "Finished: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Add-Content $LogFile "Success: $SuccessCount"
 Add-Content $LogFile "Failed: $FailureCount"
 
-if ($FailureCount -gt 0) {
+if ($FailureCount -gt 0 -or $BatchExitCode -gt 1) {
     exit 1
 }
-```

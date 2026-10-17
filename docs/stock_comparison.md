@@ -1,15 +1,16 @@
 # Local historical stock comparison
 
 This workflow produces one reusable, typed two-ticker comparison from Yahoo Finance daily
-historical data. It calculates price-only hypothetical balances and stores completed year-end
-checkpoints. The video starts directly on a minimal chart with a white background by default;
-`--background black` selects a black chart with a contrasting palette. Its date axis extends
-with the timeline, and its logarithmic value axis starts at the initial investment and grows to
-the highest value visible so far. Values below the initial investment are clipped at the
-baseline. Line-end values follow the animated traces, without bottom subtitles. Audio is
-optional and disabled by default. It validates a **1080×1920 H.264 MP4** and does not call an
-LLM, use paid generation, create narration, upload, publish, or schedule. Output directories
-are never overwritten.
+historical data, sampled daily or weekly. It calculates price-only hypothetical balances and
+stores completed year-end checkpoints. The Python renderer defaults to a full-size chart on white; `--background black`
+selects a contrasting black palette, and `--content-scale 0.90` centers the chart at 90% size
+to add padding while retaining the **1080×1920 H.264 MP4** canvas. The PowerShell batch script
+uses black, 90% content scale, and background music by default. The date axis extends with the
+timeline, and its logarithmic value axis starts at the initial investment and grows to the
+highest value visible so far. Values below the initial investment are clipped at the baseline.
+Line-end values follow the animated traces, without bottom subtitles. Audio is optional in the
+Python CLIs. The workflow does not call an LLM, use paid generation, create narration, upload,
+publish, or schedule. Output directories are never overwritten.
 
 ## Install and run
 
@@ -35,6 +36,9 @@ Run from the repository root with a **new** output directory:
 
 Add `--background black` to render the black theme; white is the default.
 
+Add `--content-scale 0.90` to render the chart at 90% size, centered on the original canvas.
+The supported range is 0.5 through 1.0; 1.0 uses the full frame.
+
 Add `--audio` to randomly select one `.wav`, `.mp3`, `.m4a`, or `.aac` file from
 `C:\Users\tyler\Downloads\AiYoutube\audio` and include it as background music. Use
 `--audio-dir PATH` to choose a different folder. The selected track is copied into the output,
@@ -46,6 +50,13 @@ explicitly. Without `--audio`, the video remains silent and the audio folder is 
 symbols; `--initial-investment` defaults to 10,000. An optional inclusive `--through-date`
 caps the history. Otherwise, the workflow uses a conservative 4:15 p.m. America/New_York
 cutoff for a completed weekday bar and excludes an in-progress current-day bar.
+
+Use `--frequency weekly` to compare the last common observed close in each completed
+Monday-to-Friday week; an incomplete current week is omitted. The default is `daily`, which
+uses every common daily close. Weekly mode still downloads daily source history to preserve
+exact common trading dates and year-end checkpoints, so it reduces comparison points and
+rendering work but not Yahoo Finance download volume. The batch CLI and `stockCompare100.ps1`
+also accept `--frequency weekly` and `-Frequency weekly`, respectively.
 
 When `--expected-first-date-a` is supplied, ticker A is fetched from 1900-01-01 (inclusive)
 and its first valid `Close` must equal the expected date. This verifies that the requested
@@ -59,7 +70,8 @@ The workflow uses the installed yfinance `PriceHistory.history` documentation an
 - The installed yfinance **0.2.66** method documents `start` as inclusive and `end` as
   exclusive; the implementation records the exclusive `end` passed to the request.
 - It requests `interval="1d"`, `auto_adjust=False`, `actions=False`, `repair=False`,
-  `keepna=True`, and `raise_errors=True`. In that API, `auto_adjust=True` would adjust OHLC
+  `keepna=True`, and `raise_errors=True` for both sampling frequencies. In that API,
+  `auto_adjust=True` would adjust OHLC
   using adjusted-close data. This workflow explicitly selects the historical `Close` field
   instead of `Adj Close`.
 - Yahoo's historical `Close` values reflect stock splits while excluding dividend
@@ -75,9 +87,10 @@ The workflow uses the installed yfinance `PriceHistory.history` documentation an
   Fractional shares are assumed; results use Decimal arithmetic and are rounded half-up to
   cents in the data files. The animated screen shows compact, rounded dollar amounts.
 - Only exact dates with finite, positive closes for both tickers are retained. Missing close
-  rows are counted and omitted. The workflow never forward-fills, interpolates, or invents a
-  price. Year-end values use the last common trading observation in each completed calendar
-  year. The graph reveals only observations reached so far; its x range follows the latest
+  rows are counted and omitted. Weekly mode selects the last common daily close per completed
+  trading week; no partial week is included. The workflow never forward-fills, interpolates,
+  or invents a price. Year-end values use the last common daily trading observation in each
+  completed calendar year. The graph reveals only observations reached so far; its x range follows the latest
   visible date, and its log-scale y range stays anchored at the initial investment while its
   upper bound follows the highest visible value, never a future point. Values below the initial
   investment are clipped at the baseline. Equal vertical distances represent equal percentage
@@ -100,10 +113,13 @@ Each successful run saves to its new directory beneath ignored `workspace/stock_
 - `cover.png`, `contact_sheet.png`, and `review_frames/` — actual frames decoded from the
   encoded MP4 with FFmpeg, not just pre-render storyboards.
 - `audio_track.*` — a copy of the randomly selected music file, when audio is enabled.
-- `comparison.json`, `daily_values.csv`, and `year_end_checkpoints.csv` — calculation inputs
-  and outputs, including the daily observations used.
+- `comparison.json`, `daily_values.csv` or `weekly_values.csv`, and
+  `year_end_checkpoints.csv` — calculation inputs and outputs, with observations at the
+  selected frequency.
 - `acquisition.json` and `methodology.md` — source, API parameters, missing-row policy,
   attribution, and limitations.
+- `publishing.json` — draft YouTube title, description, tags, hashtags, source links,
+  asset references, and review notes. It does not upload or schedule the video.
 - `review_summary.json` and `run_state.json` — technical QA and `awaiting_human_review` state.
 
 Technical validation checks H.264 video presence, the expected audio-stream state, and—when
@@ -113,3 +129,21 @@ selected track, its copied snapshot, and SHA-256 hash. Inspect the contact sheet
 calculations, attribution, and framing personally before any external use.
 Technical QA does not establish source-data rights, factual completeness, originality,
 platform-policy compliance, or editorial approval.
+
+## Batch generation
+
+`stockCompare100.ps1` sends its comparison list to `python -m
+pipeline.stock_comparison_batch`. The batch runner fetches each distinct ticker's history once, starting at the earliest requested
+date for that ticker, then reuses the data to build each comparison. It renders with a bounded
+process pool; the PowerShell script defaults to two workers. Adjust `$RenderWorkers` in the
+script between 1 and 4 to tune CPU and memory use. Use
+`.\stockCompare100.ps1 -StartAt 91` to resume at a one-based comparison index; the default is
+1. `-Count` limits how many comparisons to render (default: 100); for example,
+`.\stockCompare100.ps1 -StartAt 1 -Count 1` renders just the first comparison. The script's
+default output root is a new `compare100stocks_audio_black` directory so the
+previously scheduled silent videos and their receipts are preserved. Set `-OutputRoot` to
+choose another new directory; existing video directories are never overwritten. The batch CLI
+accepts `--background`, `--content-scale`, `--audio`, and `--audio-dir`. The PowerShell script
+uses a black background, 90% content scale, and randomly selects music from
+`C:\Users\tyler\Downloads\AiYoutube\audio`. Batch `acquisition.json` files record the shared
+history start date for each ticker, sampling frequency, and whether the shared cache was used.

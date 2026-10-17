@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import struct
 import wave
@@ -12,10 +13,12 @@ import pytest
 
 from core.exceptions import InvalidInputError, MarketDataError
 from core.stock_comparison import (
+    PriceDownload,
     build_stock_comparison,
     download_daily_closes,
     latest_completed_history_end,
 )
+from pipeline import stock_comparison_batch
 from pipeline.stock_comparison import (
     DEFAULT_AUDIO_DIR,
     _parser,
@@ -210,6 +213,66 @@ def test_build_stock_comparison_uses_exact_common_dates_and_completed_year_ends(
     }
 
 
+def test_weekly_sampling_uses_completed_weeks_and_daily_year_end_checkpoints() -> None:
+    dates = [
+        date(2024, 12, 23),
+        date(2024, 12, 27),
+        date(2024, 12, 30),
+        date(2024, 12, 31),
+        date(2025, 1, 2),
+        date(2025, 1, 3),
+        date(2025, 1, 6),
+        date(2025, 1, 7),
+    ]
+    comparison = build_stock_comparison(
+        ticker_a="AMZN",
+        label_a="Amazon",
+        prices_a={
+            trading_date: Decimal(str(index * 10))
+            for index, trading_date in enumerate(dates, start=1)
+        },
+        ticker_b="WMT",
+        label_b="Walmart",
+        prices_b={
+            trading_date: Decimal(str(index * 100))
+            for index, trading_date in enumerate(dates, start=1)
+        },
+        requested_start_date=dates[0],
+        initial_investment=Decimal("100"),
+        completed_through_year=2024,
+        frequency="weekly",
+        completed_through_date=date(2025, 1, 7),
+    )
+
+    assert comparison.sampling_frequency == "weekly"
+    assert [point.date for point in comparison.points] == [
+        date(2024, 12, 27),
+        date(2025, 1, 3),
+    ]
+    assert comparison.points[1].value_a == Decimal("300.00")
+    assert [(row.year, row.date) for row in comparison.year_end_checkpoints] == [
+        (2024, date(2024, 12, 31))
+    ]
+    assert comparison.year_end_checkpoints[0].value_a == Decimal("200.00")
+
+    starts_after_2024_checkpoint = build_stock_comparison(
+        ticker_a="AMZN",
+        label_a="Amazon",
+        prices_a={trading_date: Decimal("10") for trading_date in dates[3:6]},
+        ticker_b="WMT",
+        label_b="Walmart",
+        prices_b={trading_date: Decimal("20") for trading_date in dates[3:6]},
+        requested_start_date=date(2024, 12, 31),
+        initial_investment=Decimal("100"),
+        completed_through_year=2024,
+        frequency="weekly",
+        completed_through_date=date(2025, 1, 3),
+    )
+
+    assert starts_after_2024_checkpoint.start_date == date(2025, 1, 3)
+    assert starts_after_2024_checkpoint.year_end_checkpoints == []
+
+
 def test_build_stock_comparison_fails_on_unverified_start_or_no_common_data() -> None:
     with pytest.raises(MarketDataError, match="first valid fetched Close"):
         build_stock_comparison(
@@ -252,6 +315,161 @@ def test_history_cutoff_excludes_an_in_progress_us_trading_day() -> None:
     )
     assert cutoff == date(2026, 10, 13)
     assert end_exclusive == date(2026, 10, 14)
+
+
+def test_batch_manifest_loads_windows_powershell_utf8_json(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "batch.json"
+    manifest_path.write_text(
+        json.dumps(
+            [
+                {
+                    "ticker_a": "AAA",
+                    "label_a": "Alpha",
+                    "ticker_b": "BBB",
+                    "label_b": "Beta",
+                    "start_date": "2020-01-02",
+                    "video_name": "alpha_beta",
+                    "initial_investment": "10000",
+                }
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+
+    requests = stock_comparison_batch.load_manifest(manifest_path)
+
+    assert len(requests) == 1
+    assert requests[0].ticker_a == "AAA"
+    assert requests[0].start_date == date(2020, 1, 2)
+    assert requests[0].initial_investment == Decimal("10000")
+
+
+def test_batch_parser_accepts_explicit_background() -> None:
+    required_args = [
+        "--manifest",
+        "manifest.json",
+        "--output-root",
+        "output",
+        "--report",
+        "report.json",
+    ]
+
+    args = stock_comparison_batch._parser().parse_args(
+        [
+            *required_args,
+            "--frequency",
+            "weekly",
+            "--background",
+            "black",
+            "--content-scale",
+            "0.9",
+            "--audio",
+            "--audio-dir",
+            "music",
+        ]
+    )
+
+    assert args.frequency == "weekly"
+    assert args.background == "black"
+    assert args.content_scale == 0.9
+    assert args.audio is True
+    assert args.audio_dir == Path("music")
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.skipif(not FFMPEG, reason="FFmpeg is required")
+def test_batch_reuses_ticker_histories_and_renders_with_process_workers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dates = [date(2020, 1, 2), date(2020, 1, 3), date(2020, 1, 6)]
+    prices = {
+        "AAA": dict(zip(dates, map(Decimal, ("10", "11", "12")), strict=True)),
+        "BBB": dict(zip(dates, map(Decimal, ("20", "19", "18")), strict=True)),
+        "CCC": dict(zip(dates, map(Decimal, ("30", "31", "32")), strict=True)),
+    }
+    calls: list[tuple[str, date, date]] = []
+
+    def fake_download(ticker: str, start: date, end: date) -> PriceDownload:
+        calls.append((ticker, start, end))
+        selected = {day: close for day, close in prices[ticker].items() if start <= day < end}
+        return PriceDownload(
+            ticker=ticker,
+            prices=selected,
+            first_available_date=min(selected),
+            last_available_date=max(selected),
+            missing_close_rows=0,
+            download_rows=len(selected),
+        )
+
+    monkeypatch.setattr(stock_comparison_batch, "download_daily_closes", fake_download)
+    monkeypatch.setattr(stock_comparison_batch, "version", lambda _package: "0.2.66")
+    requests = [
+        stock_comparison_batch.BatchComparisonRequest(
+            ticker_a="AAA",
+            label_a="Alpha",
+            ticker_b="BBB",
+            label_b="Beta",
+            start_date=dates[0],
+            video_name="alpha_beta",
+        ),
+        stock_comparison_batch.BatchComparisonRequest(
+            ticker_a="AAA",
+            label_a="Alpha",
+            ticker_b="CCC",
+            label_b="Gamma",
+            start_date=dates[1],
+            video_name="alpha_gamma",
+        ),
+    ]
+    output_root = tmp_path / "batch"
+    audio_dir = tmp_path / "music"
+    audio_dir.mkdir()
+    _write_test_tone(audio_dir / "tone.wav")
+
+    report = stock_comparison_batch.run_stock_comparison_batch(
+        requests,
+        output_root,
+        workers=2,
+        ffmpeg_path=str(FFMPEG),
+        fps=5,
+        width=270,
+        height=480,
+        background="black",
+        content_scale=0.9,
+        audio=True,
+        audio_dir=audio_dir,
+        frequency="weekly",
+        chart_s=3,
+        end_hold_s=1,
+    )
+
+    assert len(calls) == 3
+    assert {(ticker, start) for ticker, start, _end in calls} == {
+        ("AAA", dates[0]),
+        ("BBB", dates[0]),
+        ("CCC", dates[1]),
+    }
+    assert report["distinct_tickers"] == 3
+    assert report["sampling_frequency"] == "weekly"
+    assert report["succeeded"] == 2
+    assert report["failed"] == 0
+    for name in ("alpha_beta", "alpha_gamma"):
+        output = output_root / name
+        assert (output / "video.mp4").is_file()
+        acquisition = json.loads((output / "acquisition.json").read_text(encoding="utf-8"))
+        assert acquisition["history_cache_used"]
+        assert acquisition["sampling_frequency"] == "weekly"
+        assert acquisition["history_start_inclusive_by_ticker"]["AAA"] == "2020-01-02"
+        comparison_data = json.loads((output / "comparison.json").read_text(encoding="utf-8"))
+        assert comparison_data["sampling_frequency"] == "weekly"
+        assert (output / "weekly_values.csv").is_file()
+        summary = json.loads((output / "review_summary.json").read_text(encoding="utf-8"))
+        assert summary["data"]["sampling_frequency"] == "weekly"
+        assert summary["audio_stream_present"]
+        assert summary["visual_style"] == {"background": "black", "content_scale": 0.9}
+        assert summary["audio_track"]["selected_file"] == "tone.wav"
+        assert (output / "audio_track.wav").is_file()
 
 
 def test_run_refuses_to_overwrite_an_existing_directory(tmp_path: Path) -> None:
@@ -366,14 +584,29 @@ def test_cli_background_defaults_to_white_and_accepts_black() -> None:
     ]
 
     defaults = _parser().parse_args(common_args)
+    assert defaults.frequency == "daily"
     assert defaults.background == "white"
+    assert defaults.content_scale == 1.0
     assert defaults.audio is False
     assert defaults.audio_dir == DEFAULT_AUDIO_DIR
 
     black_with_audio = _parser().parse_args(
-        [*common_args, "--background", "black", "--audio", "--audio-dir", "music"]
+        [
+            *common_args,
+            "--background",
+            "black",
+            "--frequency",
+            "weekly",
+            "--content-scale",
+            "0.9",
+            "--audio",
+            "--audio-dir",
+            "music",
+        ]
     )
     assert black_with_audio.background == "black"
+    assert black_with_audio.frequency == "weekly"
+    assert black_with_audio.content_scale == 0.9
     assert black_with_audio.audio is True
     assert black_with_audio.audio_dir == Path("music")
 
@@ -427,6 +660,19 @@ def test_chart_header_uses_configured_investment_amount(
     assert "Hypothetical $2,500.50 each • Dec 31, 2020 start" in labels
 
 
+def test_content_scale_centers_chart_on_padded_canvas() -> None:
+    comparison = _comparison()
+    outer = StockComparisonGraphics(540, 960, background="black", content_scale=0.9)
+    inner = StockComparisonGraphics(486, 864, background="black")
+
+    frame = outer.frame(comparison, 0.0)
+    expected_content = inner.frame(comparison, 0.0)
+
+    assert frame.size == (540, 960)
+    assert frame.crop((27, 48, 513, 912)).tobytes() == expected_content.tobytes()
+    assert frame.getpixel((0, 480)) == (0, 0, 0)
+
+
 def test_output_metadata_title_uses_computed_final_values(tmp_path: Path) -> None:
     comparison = _comparison()
 
@@ -438,12 +684,48 @@ def test_output_metadata_title_uses_computed_final_values(tmp_path: Path) -> Non
         yfinance_version="0.2.66",
     )
 
-    metadata = (tmp_path / "publishing.json").read_text(encoding="utf-8")
+    metadata = json.loads((tmp_path / "publishing.json").read_text(encoding="utf-8"))
     assert _suggested_title(comparison) == (
         "$100 in Amazon vs. Walmart: $250 vs. $40 (2020-2022, price only)"
     )
-    assert '"uploaded": false' in metadata
-    assert '"scheduled": false' in metadata
+    assert metadata["title"] == _suggested_title(comparison)
+    assert len(metadata["title"]) <= 100
+    assert metadata["platform"] == "YouTube"
+    assert metadata["sampling_frequency"] == "daily"
+    assert metadata["tags"][:4] == ["AMZN", "Amazon", "WMT", "Walmart"]
+    assert metadata["hashtags"] == [
+        "StockMarket",
+        "Investing",
+        "FinancialEducation",
+        "Shorts",
+    ]
+    assert "#StockMarket" in metadata["description"]
+    assert "$250.00" in metadata["description"]
+    assert "$40.00" in metadata["description"]
+    assert "Dividends and reinvestment are excluded" in metadata["description"]
+    assert metadata["source_urls"] == [
+        "https://finance.yahoo.com/quote/AMZN/history/",
+        "https://finance.yahoo.com/quote/WMT/history/",
+        "https://github.com/ranaroussi/yfinance",
+    ]
+    assert metadata["assets"] == {
+        "video": "video.mp4",
+        "thumbnail_candidate": "cover.png",
+    }
+    assert metadata["review_required"]
+    assert metadata["uploaded"] is False
+    assert metadata["scheduled"] is False
+
+
+def test_suggested_youtube_title_stays_within_limit_for_long_labels() -> None:
+    comparison = _comparison().model_copy(
+        update={"label_a": "A" * 40, "label_b": "B" * 40}
+    )
+
+    title = _suggested_title(comparison)
+
+    assert len(title) <= 100
+    assert title.startswith("AMZN vs. WMT:")
 
 
 @pytest.mark.ffmpeg

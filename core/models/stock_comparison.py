@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+SamplingFrequency = Literal["daily", "weekly"]
 
 
 class ComparisonPoint(BaseModel):
@@ -49,6 +52,7 @@ class StockComparison(BaseModel):
     entry_price_a: Decimal = Field(gt=0)
     entry_price_b: Decimal = Field(gt=0)
     completed_through_year: int = Field(ge=1900, le=9999)
+    sampling_frequency: SamplingFrequency = "daily"
     source: str = "Yahoo Finance historical data via yfinance"
     price_field: str = "Close"
     adjustment_method: str = (
@@ -72,12 +76,12 @@ class StockComparison(BaseModel):
         if self.points[0].date != self.start_date or self.points[-1].date != self.end_date:
             raise ValueError("The first and last points must match the comparison date range.")
         if len(self.points) != self.common_observation_count:
-            raise ValueError("common_observation_count must match the daily points.")
+            raise ValueError("common_observation_count must match the comparison points.")
         if any(
             earlier.date >= later.date
             for earlier, later in zip(self.points, self.points[1:], strict=False)
         ):
-            raise ValueError("Daily comparison dates must be strictly increasing.")
+            raise ValueError("Comparison dates must be strictly increasing.")
         if any(checkpoint.date.year != checkpoint.year for checkpoint in self.year_end_checkpoints):
             raise ValueError("Each year-end checkpoint must fall within its stated year.")
         return self

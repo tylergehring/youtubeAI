@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from core.exceptions import MarketDataError
 from core.models.stock_comparison import (
     ComparisonPoint,
+    SamplingFrequency,
     StockComparison,
     YearEndCheckpoint,
 )
@@ -205,8 +206,10 @@ def build_stock_comparison(
     missing_close_rows_b: int = 0,
     download_rows_a: int | None = None,
     download_rows_b: int | None = None,
+    frequency: SamplingFrequency = "daily",
+    completed_through_date: date | None = None,
 ) -> StockComparison:
-    """Build common-date fractional-share holdings and completed year-end checkpoints."""
+    """Build common-date holdings and exact year-end checkpoints from daily source closes."""
     symbol_a = validate_ticker(ticker_a)
     symbol_b = validate_ticker(ticker_b)
     if symbol_a == symbol_b:
@@ -215,6 +218,10 @@ def build_stock_comparison(
         raise MarketDataError("Both display labels must be non-empty.")
     if initial_investment <= 0:
         raise MarketDataError("The initial investment must be greater than zero.")
+    if frequency not in ("daily", "weekly"):
+        raise MarketDataError(
+            f"Unsupported sampling frequency {frequency!r}; choose 'daily' or 'weekly'."
+        )
     if expected_first_date_a is not None:
         if first_available_date_a is None:
             raise MarketDataError(
@@ -226,22 +233,40 @@ def build_stock_comparison(
                 f"expected {expected_first_date_a}."
             )
 
-    common_dates = sorted(
+    daily_common_dates = sorted(
         trading_date
         for trading_date in prices_a.keys() & prices_b.keys()
         if trading_date >= requested_start_date
     )
-    if not common_dates:
+    if not daily_common_dates:
         raise MarketDataError(
             f"{symbol_a} and {symbol_b} have no common valid daily closes on or after "
             f"{requested_start_date}; no missing date will be forward-filled."
         )
-    if expected_first_date_a is not None and common_dates[0] != expected_first_date_a:
+    if expected_first_date_a is not None and daily_common_dates[0] != expected_first_date_a:
         raise MarketDataError(
-            f"The first common close is {common_dates[0]}, not the verified expected start "
+            f"The first common close is {daily_common_dates[0]}, not the verified expected start "
             f"{expected_first_date_a}; both securities must have an observed close on the "
             "chosen starting date."
         )
+
+    common_dates = daily_common_dates
+    if frequency == "weekly":
+        weekly_dates: dict[tuple[int, int], date] = {}
+        cutoff = completed_through_date or daily_common_dates[-1]
+        for trading_date in daily_common_dates:
+            week_ending = trading_date + timedelta(days=4 - trading_date.weekday())
+            if week_ending > cutoff:
+                continue
+            iso_week = trading_date.isocalendar()
+            weekly_dates[(iso_week.year, iso_week.week)] = trading_date
+        common_dates = sorted(weekly_dates.values())
+        if not common_dates:
+            raise MarketDataError(
+                f"{symbol_a} and {symbol_b} have no completed common weekly closes "
+                f"on or after {requested_start_date} through {cutoff}; no partial week "
+                "will be included."
+            )
 
     entry_a = prices_a[common_dates[0]]
     entry_b = prices_b[common_dates[0]]
@@ -258,18 +283,17 @@ def build_stock_comparison(
         for trading_date in common_dates
     ]
 
-    checkpoints_by_year: dict[int, ComparisonPoint] = {}
-    for point in points:
-        if point.date.year <= completed_through_year:
-            checkpoints_by_year[point.date.year] = point
+    checkpoints_by_year: dict[int, YearEndCheckpoint] = {}
+    for trading_date in daily_common_dates:
+        if trading_date >= common_dates[0] and trading_date.year <= completed_through_year:
+            checkpoints_by_year[trading_date.year] = YearEndCheckpoint(
+                year=trading_date.year,
+                date=trading_date,
+                value_a=_market_value(initial_investment, prices_a[trading_date], entry_a),
+                value_b=_market_value(initial_investment, prices_b[trading_date], entry_b),
+            )
     checkpoints = [
-        YearEndCheckpoint(
-            year=year,
-            date=point.date,
-            value_a=point.value_a,
-            value_b=point.value_b,
-        )
-        for year, point in sorted(checkpoints_by_year.items())
+        checkpoint for _, checkpoint in sorted(checkpoints_by_year.items())
     ]
 
     return StockComparison(
@@ -286,6 +310,7 @@ def build_stock_comparison(
         entry_price_a=entry_a,
         entry_price_b=entry_b,
         completed_through_year=completed_through_year,
+        sampling_frequency=frequency,
         missing_close_rows_a=missing_close_rows_a,
         missing_close_rows_b=missing_close_rows_b,
         download_rows_a=download_rows_a or len(prices_a),
